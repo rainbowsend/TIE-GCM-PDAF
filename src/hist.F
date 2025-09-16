@@ -5,6 +5,14 @@
 ! Open Source Academic Research License Agreement contained in the file 
 ! tiegcmlicense.txt.
 !
+! -----------------------------------------------------------------------------
+! This file was modified for the integration of the Parallel Data Assimilation
+! Framework (PDAF)
+! Armin Corbin, University of Bonn, Institute for Geodesy and Geoinformation
+!
+! 22 APR 2020: added entry for sub solar point in history files
+! 13 SEP 2022: replaced Nonconforming tab character
+! -----------------------------------------------------------------------------
       use input_module,only: mxlen_filename
       use params_module,only: spval,ispval
       implicit none
@@ -51,7 +59,7 @@
       integer ::
      |  nseries_prim,   ! number of primary history time series (1-mxseries)
      |  iseries_prim,   ! index to primary history time series
-     |  nsource,	! number of source files given (0 or 1)
+     |  nsource,        ! number of source files given (0 or 1)
      |  nfiles_prim,    ! number of history output files to be written
      |  nstep,          ! total number of steps this run
      |  ncid,           ! netcdf file id (ignored if .not.netcdf)
@@ -152,6 +160,7 @@
      |    kp,                ! solar activity index
      |    f107d,             ! daily f10.7 cm flux
      |    f107a,             ! 81-day average f10.7 cm flux
+     |    subsolarpoint(2),  ! longitude and latitude of subsolar point
      |    dtide(2),          ! diurnal tide (tide2(2) from input)
      |    sdtide(10),        ! semi-diurnal tide (tide(10) from input)
      |    colfac,            ! collision factor
@@ -175,8 +184,8 @@
 !
 ! Global history structure variable:
       type(history) :: 
-     |  h,	! output histories (primary or secondary)
-     |  sh	! source history (input)
+     |  h,  ! output histories (primary or secondary)
+     |  sh  ! source history (input)
 !
 ! Initialization values:
       real :: real_init = spval ! initialization value for real vars
@@ -269,6 +278,7 @@
         h%f107d   = real_init
         h%f107a   = real_init
       endif
+      h%subsolarpoint = (/real_init,real_init/)
       h%byimf = real_init
       h%bzimf = real_init
       h%swvel = real_init

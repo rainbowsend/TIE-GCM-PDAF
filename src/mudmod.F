@@ -9,6 +9,13 @@
 ! 5/02 B. Foster:
 ! Use-associate coefficients cee and cofum from dynamo module in tiegcm1 
 ! (dynamo.F).
+! -----------------------------------------------------------------------------
+! This file was modified for the integration of the Parallel Data Assimilation
+! Framework (PDAF)
+! Armin Corbin, University of Bonn, Institute for Geodesy and Geoinformation
+!
+! 07 JUL 2023: allocate 'work' array to fix  'moved from stack to static storage'
+! -----------------------------------------------------------------------------
 !----------------------------------------------------------------------------
 ! BOP
 ! !IROUTINE: mudmod
@@ -62,7 +69,8 @@ c
 c     estimate work space for point relaxation (see mud2cr.d)
 c
       parameter (llwork=(7*(nnx+2)*(nny+2)+76*nnx*nny)/3 )
-      real phi(nnx,nny),rhs(nnx,nny),work(llwork)
+      real phi(nnx,nny),rhs(nnx,nny)
+      real, dimension(:), allocatable :: work
 c
 c     put integer and floating point argument names in contiguous
 c     storage for labelling in vectors iprm,fprm
@@ -84,8 +92,9 @@ c
       DATA MAXCYA/50/
       integer mm,nn,jj,jjj
       real pi
-
 !     write(6,"('Enter mudmod: jntl=',i3)") jntl
+c
+      allocate(work(llwork))
 c
 c     set input integer arguments
 c
@@ -167,7 +176,7 @@ c
       DO I=1,NX
         PHI(I,NY) = RHS(I,NY)/CEE(I+(NY-1)*NX+8*NX*NY)
       END DO
-      
+
 !     write(*,100)
   100 format(//' mud2cr test ')
 !     write (*,101) (iprm(i),i=1,15)
@@ -203,11 +212,11 @@ c
 !     write(*,106) intl,method,iguess
   106 format(/' approximation call to mud2cr',
      +/' intl = ',i2, ' method = ',i2,' iguess = ',i2)
-      
+
       call mud2cm(iprm,fprm,work,rhs,phi,mgopt,ierror,isolve)
       ier = ierror ! ier < 0 not converged
       if(ier < 0 )  goto 108
-      
+
 !     write (*,107) ierror
   107 format(' ierror = ',i2)
       if (ierror.gt.0) call exit(0)
@@ -215,15 +224,16 @@ C
 C     COPY PHI TO PE
 C
       DO J = 1,NY
-	JJ = NY+J-1
-	JJJ = NY+1-J
-	DO I = 1,NX
-	  PE(I,JJ) = PHI(I,J)
-	  PE(I,JJJ) = PHI(I,J)
-	END DO
+        JJ = NY+J-1
+        JJJ = NY+1-J
+        DO I = 1,NX
+          PE(I,JJ) = PHI(I,J)
+          PE(I,JJJ) = PHI(I,J)
+        END DO
       END DO
-      
-  108 continue   
+
+  108 continue
+      deallocate(work)
       end
 C-------------------------------------------------------------------
       subroutine mud2cm(iparm,fparm,work,rhs,phi,mgopt,

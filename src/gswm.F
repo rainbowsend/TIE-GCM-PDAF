@@ -1,10 +1,19 @@
-!      
+!
       module gswm_module
 !
 ! This software is part of the NCAR TIE-GCM.  Use is governed by the 
 ! Open Source Academic Research License Agreement contained in the file 
 ! tiegcmlicense.txt.
-!      
+!
+! -----------------------------------------------------------------------------
+! This file was modified for the integration of the Parallel Data Assimilation
+! Framework (PDAF)
+! Armin Corbin, University of Bonn, Institute for Geodesy and Geoinformation
+!
+! 07 JUL 2023: allocate 't','u','v','z' and 'tmp' array
+!              to fix  'moved from stack to static storage'
+! -----------------------------------------------------------------------------
+!
 ! Read GSWM boundary perturbations Z, T, U, V, and interpolate
 !   to model grid and time.
 !
@@ -62,6 +71,9 @@
      |  igswm_mi_sdi , ! 0/1 flag to get GSWM data semidiurnal tide
      |  igswm_nm_di  , ! 0/1 flag to get GSWM data nonmigrating diurnal tide
      |  igswm_nm_sdi   ! 0/1 flag to get GSWM data nonmigrating semidiurnal tide
+#ifdef USE_PDAF
+      use model_parameter_handling_module, only: param_gswm_delay
+#endif
 !
 ! Driver for obtaining GSWM data, called once per timestep from advance.
 !
@@ -72,31 +84,51 @@
 ! Local:
       integer :: iprint
 !
+
+      real :: phase_secs
+      integer :: phase_day
+
       iprint = 0
       if (istep==1) iprint = 1
+#ifdef USE_PDAF
+      ! perturbe phase of tide
+      ! secs is in [0,86400)
+      phase_secs = secs
+      call param_gswm_delay%handle(phase_secs)
+      phase_day = iday + floor(phase_secs/86400.)
+      phase_secs = mod(int(phase_secs),86400)
+c       write(*,*) 'actual model time is ', iday, ' days ', secs, ' secs.'
+c       write(*,*) 'phase offset model time is ', phase_day, ' days ',
+c      |            phase_secs, ' secs.'
+      ! iyear is not used in mkgswm, ignore it
+      ! mkgswm uses modeltime, needs to be perturbed
+#else
+      phase_secs = secs
+      phase_day = iday
+#endif
 !
 ! Get gswm migrating diurnal tide data:
       if (igswm_mi_di > 0) then
         if (istep==1) call rdgswm(gswm_mi_di_ncfile,'mi_di')
-        call mkgswm(iyear,iday,int(secs),iprint,'mi_di')
+        call mkgswm(iyear,phase_day,int(phase_secs),iprint,'mi_di')
       endif
 !
 ! Get gswm migrating semi-diurnal tide data:
       if (igswm_mi_sdi > 0) then
         if (istep==1) call rdgswm(gswm_mi_sdi_ncfile,'mi_sdi')
-        call mkgswm(iyear,iday,int(secs),iprint,'mi_sdi')
+        call mkgswm(iyear,phase_day,int(phase_secs),iprint,'mi_sdi')
       endif
 !
 ! Get gswm non-migrating diurnal tide data:
       if (igswm_nm_di > 0) then
         if (istep==1) call rdgswm(gswm_nm_di_ncfile,'nm_di')
-        call mkgswm(iyear,iday,int(secs),iprint,'nm_di')
+        call mkgswm(iyear,phase_day,int(phase_secs),iprint,'nm_di')
       endif
 !
 ! Get gswm non-migrating semi-diurnal tide data:
       if (igswm_nm_sdi > 0) then
         if (istep==1) call rdgswm(gswm_nm_sdi_ncfile,'nm_sdi')
-        call mkgswm(iyear,iday,int(secs),iprint,'nm_sdi')
+        call mkgswm(iyear,phase_day,int(phase_secs),iprint,'nm_sdi')
       endif
       end subroutine getgswm
 !-----------------------------------------------------------------------
@@ -114,8 +146,14 @@
       integer :: id_nmonth, id_nhour, id_nlon, id_nlat
       integer :: idv_z, idv_t, idv_u, idv_v
       character(len=240) :: char240
-      real,dimension(nlonp4,nlat,nmonth,nhour) :: t,u,v,z
-      real,dimension(nlon,nlat,nmonth,nhour) :: tmp
+      real,dimension(:,:,:,:), allocatable :: t,u,v,z
+      real,dimension(:,:,:,:), allocatable :: tmp
+!
+      allocate(t(nlonp4,nlat,nmonth,nhour))
+      allocate(u(nlonp4,nlat,nmonth,nhour))
+      allocate(v(nlonp4,nlat,nmonth,nhour))
+      allocate(z(nlonp4,nlat,nmonth,nhour))
+      allocate(tmp(nlon,nlat,nmonth,nhour))
 !
       dskfile = ' '
       call getfile(ncfile,dskfile)
@@ -276,6 +314,13 @@
       call nc_close(ncid)
       write(6,"('Completed read from GSWM data file ',a)") trim(ncfile)
       write(6,"(/,72('-'))")
+
+      deallocate(t)
+      deallocate(u)
+      deallocate(v)
+      deallocate(z)
+      deallocate(tmp)
+
       end subroutine rdgswm
 !-----------------------------------------------------------------------
       subroutine mkgswm(iyear,iday,isecs,iprint,type)
@@ -291,6 +336,9 @@
       use hist_module,only: modeltime
 #ifdef MPI
       use mpi_module,only: mp_periodic_f2d
+#endif
+#ifdef USE_PDAF
+      use model_parameter_handling_module, only: param_gswm_delay
 #endif
       implicit none
 !
@@ -309,15 +357,33 @@
      |  z_curmo_nxthr, t_curmo_nxthr, u_curmo_nxthr, v_curmo_nxthr,
      |  z_nxtmo_nxthr, t_nxtmo_nxthr, u_nxtmo_nxthr, v_nxtmo_nxthr
       real :: fgswm(lon0:lon1,lat0:lat1,4) ! for mp calls
-!   
-! Data: GSWM data given at the middle of each month 
+
+      integer :: phase_modeltime(4)
+      integer(kind=8) :: nsecs
+      real :: nsecs_r
+!
+! Data: GSWM data given at the middle of each month
 !       -> day of year for this data assuming non-leap year
 !         J  F  M  A   M   J   J   A   S   O   N   D   J
       data ndmon_nl                                ! non_leap
-     |  /15,46,74,105,135,166,196,227,258,288,319,349,380/ 
-! 
+     |  /15,46,74,105,135,166,196,227,258,288,319,349,380/
+!
 ! External:
       real,external :: finterp
+
+#ifdef USE_PDAF
+      ! perturbe phase of tide
+      ! secs is in [0,86400)
+
+      call modeltime_to_nsecs(modeltime,nsecs)
+      nsecs_r = real(nsecs)
+      call param_gswm_delay%handle(nsecs_r)
+      call nsecs_to_modeltime(int(nsecs_r,kind=8),phase_modeltime)
+c       write(*,*) 'actual model time is ', modeltime
+c       write(*,*) 'phase offset model time is ', phase_modeltime
+#else
+      phase_modeltime = modeltime
+#endif
 !
 ! For addfld calls:
       i0 = lon0 ; i1 = lon1
@@ -333,8 +399,8 @@
       if(mon_cur == 0 ) mon_cur = 12
 ! 
 ! Get hour of model run (model hours from 0 to 23 )
-      ihr_cur = modeltime(2)	! current hour
-      ihr_nxt = modeltime(2)+1  ! next hour
+      ihr_cur = phase_modeltime(2)	! current hour
+      ihr_nxt = phase_modeltime(2)+1  ! next hour
       if(ihr_nxt == 24 ) ihr_nxt = 0
 !
 ! Subdomains at current month, current hour:
@@ -352,7 +418,8 @@
 ! Interpolate to month:
       if (isecs /= 0) then
         difsec = 60.*60. ! difference in sec between ihr_cur and ihr_nxt
-        secint = float(modeltime(3)*60 + modeltime(4))  ! interpolation time [sec]
+        secint = float(phase_modeltime(3)*60 + phase_modeltime(4))  ! interpolation time [sec]
+!
 !
 ! Current month, next hour:
         z = z_curmo ; t = t_curmo ; u = u_curmo ; v = v_curmo

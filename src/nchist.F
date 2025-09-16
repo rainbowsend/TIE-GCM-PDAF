@@ -5,6 +5,18 @@
 ! Open Source Academic Research License Agreement contained in the file 
 ! tiegcmlicense.txt.
 !
+! -----------------------------------------------------------------------------
+! This file was modified for the integration of the Parallel Data Assimilation
+! Framework (PDAF)
+! Armin Corbin, University of Bonn, Institute for Geodesy and Geoinformation
+!
+! 02 APR 2020: added standard_name attribute to some variables
+! 22 APR 2020: save position of sub solar point in history files
+! 07 OCT 2022: increased character len in nc_open
+! 07 JUL 2023: allocate 'f3d', 'f3drd' array
+!              to fix  'moved from stack to static storage'
+! -----------------------------------------------------------------------------
+!
 ! Module to create, read and write netcdf history files:
 !
       use params_module,only: nlon,nlev,nmlevp1,nimlevp1,
@@ -71,7 +83,8 @@
      |  idv_sdtide,idv_f4d(nf4d),idv_e1,idv_e2,idv_h1,idv_h2,idv_alfac,
      |  idv_ec,idv_alfad,idv_ed,idv_writedate,idv_saber_ncfile,
      |  idv_tidi_ncfile,idv_crit1,idv_crit2,idv_coupled_cmit,
-     |  idv_joulefac,idv_bgrddata_ncfile,idv_ctmt_ncfile
+     |  idv_joulefac,idv_bgrddata_ncfile,idv_ctmt_ncfile,
+     |  idv_sun_lon, idv_sun_lat
       integer,allocatable :: idv_sech(:)
       integer :: idv_fsech(mxfsech)
 !
@@ -103,7 +116,7 @@
 !
 ! Local:
       integer :: istat
-      character(len=120) :: char120
+      character(len=256) :: char256
 !
       ncid = 0
       if (status=='NEW'.or.status=='REPLACE') then
@@ -112,9 +125,9 @@
 !
         istat = nf_create(flnm,NF_CLOBBER,ncid)
         if (istat /= NF_NOERR) then
-          write(char120,"('Error return from nf_create for netcdf ',
+          write(char256,"('Error return from nf_create for netcdf ',
      |      'file ',a,' status=',a)") trim(flnm),status
-          call handle_ncerr(istat,char120)
+          call handle_ncerr(istat,char256)
           ncid = 0
         else
           write(6,"('Created netcdf file ',a,' ncid=',i8)") 
@@ -136,9 +149,9 @@
           istat = nf_open(flnm,NF_WRITE,ncid)
         endif
         if (istat /= NF_NOERR) then
-          write(char120,"('Error return from nf_open for netcdf ',
+          write(char256,"('Error return from nf_open for netcdf ',
      |      'file ',a,' status=',a)") trim(flnm),status
-          call handle_ncerr(istat,char120)
+          call handle_ncerr(istat,char256)
           ncid = 0
         else
 !         write(6,"('Opened existing netcdf file ',a,' ncid=',i8)") 
@@ -924,11 +937,13 @@
       character(len=16) :: rdname,tmpname
       character(len=120) :: char120
       real :: fakevar(1,1,1),fmin,fmax,fmin1,fmax1
-      real :: f3drd(nlon,nlat,nlevp1) ! (i,j,k) as on history 
+      real, dimension(:,:,:), allocatable :: f3drd ! (i,j,k) as on history
       real :: zmj2,zmj1,fac
 !
 ! External:
       integer,external :: strloc
+!
+      allocate(f3drd(nlon,nlat,nlevp1))
 !
 ! Get info about the field:
       istat = nf_inq_varid(ncid,name,idvar)
@@ -1101,6 +1116,8 @@
       write(6,"('Read field ',a,' 3d subdomain min,max=',2e12.4)") 
      |  f4d(ix)%short_name,fmin,fmax
 !
+      deallocate(f3drd)
+
       end subroutine rdf4d
 !-----------------------------------------------------------------------
       subroutine nc_define(ncid)
@@ -1241,6 +1258,11 @@
       istat = nf_put_att_text(ncid,idv_lon,"units",12,'degrees_east')
       if (istat /= NF_NOERR) call handle_ncerr(istat,
      +  'Error defining units of longitude dimension variable')
+!     
+      istat = nf_put_att_text(ncid,idv_lon,"standard_name",
+     |  9,"longitude")
+      if (istat /= NF_NOERR) call handle_ncerr(istat,
+     |'Error defining standard_name of longitude coordinate variable')
 !
 ! Geographic latitude (deg) (coordinate variable lat(lat)):
       ids1(1) = id_lat
@@ -1255,6 +1277,11 @@
       istat = nf_put_att_text(ncid,idv_lat,"units",13,'degrees_north')
       if (istat /= NF_NOERR) call handle_ncerr(istat,
      +  'Error defining units of latitude dimension variable')
+!     
+      istat = nf_put_att_text(ncid,idv_lat,"standard_name",
+     |  8,"latitude")
+      if (istat /= NF_NOERR) call handle_ncerr(istat,
+     |'Error defining standard_name of latitude coordinate variable')
 !
 ! Midpoint levels coordinate variable lev(lev):
       ids1(1) = id_lev
@@ -1298,6 +1325,12 @@
      |  len_trim(char80),trim(char80)) 
       if (istat /= NF_NOERR) call handle_ncerr(istat,
      | 'Error defining formula for midpoint levels coord var')
+! computed_standard_name midpoint lev:
+      write(char80,"('air_pressure')")
+      istat = nf_put_att_text(ncid,idv_lev,"computed_standard_name",
+     |  len_trim(char80),trim(char80)) 
+      if (istat /= NF_NOERR) call handle_ncerr(istat,
+     | 'Error defining computed_standard_name lev')          
 !
 ! Interface levels coordinate array:
       ids1(1) = id_ilev
@@ -1341,6 +1374,12 @@
      |  len_trim(char80),trim(char80)) 
       if (istat /= NF_NOERR) call handle_ncerr(istat,
      | 'Error defining formula for interface levels coord var')
+! computed_standard_name interface lev:
+      write(char80,"('air_pressure')")
+      istat = nf_put_att_text(ncid,idv_ilev,"computed_standard_name",
+     |  len_trim(char80),trim(char80)) 
+      if (istat /= NF_NOERR) call handle_ncerr(istat,
+     | 'Error defining computed_standard_name ilev')    
 !
 ! Magnetic longitude (deg) (coordinate variable mlon(mlon)):
       ids1(1) = id_mlon
@@ -1582,6 +1621,11 @@
      |  "Daily 10.7 cm solar flux","1.e-22 W/m2/Hz")
       call defvar_time_dbl(ncid,"f107a",ids1,idv_f107a,
      |  "81-day average 10.7 cm solar flux","1.e-22 W/m2/Hz")
+! subsolar point
+      call defvar_time_dbl(ncid,"sun_lat",ids1,idv_sun_lat,
+     |  "geographic latitude of subsolar point","degrees_north")
+      call defvar_time_dbl(ncid,"sun_lon",ids1,idv_sun_lon,
+     |  "geographic longitude of subsolar point","degrees_east")
 !
 ! Hemispheric power: 
       call defvar_time_dbl(ncid,"hpower",ids1,idv_hpower,
@@ -2822,6 +2866,16 @@
       if (idv_f107a <= 0) istat = nf_inq_varid(ncid,"f107a",
      |  idv_f107a)
       istat = nf_put_var1_double(ncid,idv_f107a,h%ihist,h%f107a)
+! subsolar point
+      if (idv_sun_lat <= 0) istat = nf_inq_varid(ncid,"sun_lat",
+     |  idv_sun_lat)
+      istat = nf_put_var1_double(ncid,idv_sun_lat,h%ihist,
+     | h%subsolarpoint(2))
+!
+      if (idv_sun_lon <= 0) istat = nf_inq_varid(ncid,"sun_lon",
+     |  idv_sun_lon)
+      istat = nf_put_var1_double(ncid,idv_sun_lon,h%ihist,
+     | h%subsolarpoint(1))
 !
 ! Hemispheric power:
       if (idv_hpower <= 0) istat = nf_inq_varid(ncid,"hpower",
@@ -3323,9 +3377,11 @@
 !
 ! Local:
       integer :: nxk,k,i,j,idvar,istat,lonbeg,lonend,nnans,nanfatal
-      real :: f3d(nlon,nlat,nlevp1) ! note i,j,k for history
+      real, dimension(:,:,:), allocatable :: f3d ! note i,j,k for history
       character(len=120) :: char120
       real :: fakevar(1,1,1),fmin,fmax
+!
+      allocate(f3d(nlon,nlat,nlevp1))
 !
 ! Fake means 3d fields are dimensioned (1,1,1):
 ! (see fakeflds in flds_mod.f)
@@ -3398,6 +3454,9 @@
       if (check_nan) 
      |  call check_nans(f3d,nlon,nlat,nlevp1,name(1:8),nnans,
      |    0,0.,1,nanfatal)
+
+      deallocate(f3d)
+
       end subroutine wrf4d
 !-----------------------------------------------------------------------
       subroutine wrf3d(ncid,f,itime,name,idv)
@@ -3412,9 +3471,11 @@
 !
 ! Local:
       integer :: nxk,k,i,j,istat,lonbeg,lonend,nnans,nanfatal
-      real :: f3d(nlon,nlat,nlevp1) ! note i,j,k for history
+      real, allocatable :: f3d(:,:,:) ! note i,j,k for history
       character(len=120) :: char120
       real :: fmin,fmax
+!
+      allocate(f3d(nlon,nlat,nlevp1))
 !
 ! Transform from (k,i,j) to (i,j,k) for the history.
 ! f3d(nlon,nlat,nlevp1)            ! note i,j,k for history
@@ -3453,6 +3514,9 @@
       if (check_nan) 
      |  call check_nans(f3d,nlon,nlat,nlevp1,name,nnans,
      |    0,0.,1,nanfatal)
+
+      deallocate(f3d)
+
       end subroutine wrf3d
 !-----------------------------------------------------------------------
       subroutine nc_fileinfo(ncid,fileinfo)
@@ -3598,11 +3662,13 @@
 !
 ! Handle a netcdf lib error:
 !
+      use mpi_module, only: mytid
+
       integer,intent(in) :: istat
       character(len=*),intent(in) :: msg
 !
       write(6,"(/72('-'))")
-      write(6,"('>>> Error from netcdf library:')")
+      write(6,"('>>> Error from netcdf library rank<',I3,'>:')") mytid
       write(6,"(a)") trim(msg)
       write(6,"('istat=',i5)") istat
       write(6,"(a)") nf_strerror(istat)

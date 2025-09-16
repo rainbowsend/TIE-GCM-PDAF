@@ -5,14 +5,22 @@
 ! Open Source Academic Research License Agreement contained in the file 
 ! tiegcmlicense.txt.
 !
+! -----------------------------------------------------------------------------
+! This file was modified for the integration of the Parallel Data Assimilation
+! Framework (PDAF)
+! Armin Corbin, University of Bonn, Institute for Geodesy and Geoinformation
+!
+! 06 NOV 2019: replaced MPI_COMM_WORLD with COMM_model
+! -----------------------------------------------------------------------------
+!
       use hist_module,only: nstep
       use input_module,only: step
+#ifdef MPI
+      use mpi_module, only: comm_model
+#endif
       implicit none
 #ifdef AIX
       real,external :: rtc
-#endif
-#ifdef MPI
-#include <mpif.h>
 #endif
 !
 ! timing%level == 0 -> no timing
@@ -195,7 +203,7 @@
       call system_clock(icount1,icount_rate,icount_max)
       count_out = float(icount1)
 #ifdef MPI
-        if (ibarrier > 0) call mpi_barrier(MPI_COMM_WORLD,ier)
+        if (ibarrier > 0) call mpi_barrier(COMM_model,ier)
 #endif
 
 !     write(6,"('start_timing for ',a,': secs=',f10.3)") 
@@ -225,7 +233,7 @@
       secs2 = real(icount2)/real(icount_rate)
       esecs = secs2-secs1
 #ifdef MPI
-        if (ibarrier > 0) call mpi_barrier(MPI_COMM_WORLD,ier)
+        if (ibarrier > 0) call mpi_barrier(COMM_model,ier)
 #endif
 
 !     write(6,"('end_timing for ',a,' : secs1=',f10.3,' secs2=',f10.3,
@@ -269,7 +277,7 @@
 ! Begin: return time0 as starting time:
       if (ibegend == 0) then
 #ifdef MPI
-        if (ibarrier > 0) call mpi_barrier(MPI_COMM_WORLD,ier)
+        if (ibarrier > 0) call mpi_barrier(COMM_model,ier)
 #endif
 #ifdef AIX
         time0 = rtc()   
@@ -280,7 +288,7 @@
 ! End: time0 is now input, return time1-time0 in tsec:
       else
 #ifdef MPI
-        if (ibarrier > 0) call mpi_barrier(MPI_COMM_WORLD,ier)
+        if (ibarrier > 0) call mpi_barrier(COMM_model,ier)
 #endif
 #ifdef AIX
         time1 = rtc()   

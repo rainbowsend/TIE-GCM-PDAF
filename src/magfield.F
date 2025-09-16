@@ -5,6 +5,15 @@
 ! Open Source Academic Research License Agreement contained in the file 
 ! tiegcmlicense.txt.
 !
+! -----------------------------------------------------------------------------
+! This file was modified for the integration of the Parallel Data Assimilation
+! Framework (PDAF)
+! Armin Corbin, University of Bonn, Institute for Geodesy and Geoinformation
+!
+! 22 APR 2020: made sbsllat and sbsllon (sub solar point) to a module variable,
+!              so that it can be saved in history files
+! -----------------------------------------------------------------------------
+!
 ! Calculate magnetic field data used for transformation 
 !   between geographic and geomagnetic coordinate systems. 
 !   Sub magdyn is called once per run from main tgcm.F.
@@ -108,6 +117,9 @@
 ! (this was dlons in earlier versions)
 !
       real :: sunlons(nlat)
+!
+      real :: sbsllat,    ! geographic latitude of subsolar point (degrees)
+     |        sbsllon     ! geographic longitude of subsolar point (degrees)
 !
       contains
 !-----------------------------------------------------------------------
@@ -250,8 +262,6 @@
 ! Local:
       integer :: ihr,imn,j
       real :: sec,date,vp,xmlon, ! apex magnetic longitude
-     |  sbsllat,    ! geographic latitude of subsolar point (degrees)
-     |  sbsllon,    ! geographic longitude of subsolar point (degrees)
      |  colat,      ! Geocentric colatitude of geomagnetic dipole north pole (deg)
      |  elon        ! East longitude of geomagnetic dipole north pole (deg)
 

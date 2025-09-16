@@ -5,8 +5,15 @@
 !
 ! Definitions of grid parameters for pre-processor.
 ! See parameters.h.
+! -----------------------------------------------------------------------------
+! This file was modified for the integration of the Parallel Data Assimilation
+! Framework (PDAF)
+! Armin Corbin, University of Bonn, Institute for Geodesy and Geoinformation
+! 27 OCT 2021: control resolution via preprocessor LOWRES option
+! -----------------------------------------------------------------------------
 !
 !------------------------------------
+#ifdef LOWRES
 ! 5.0 degree horizontal:
 !
 ! Latitude dimension:
@@ -20,18 +27,20 @@
 #define DLON  (5.)
 !
 !------------------------------------
+#else
 ! 2.5 degree horizontal:
 !
 ! Latitude dimension:
-!#define NLAT  (72)
-!#define GLAT1 (-88.75)
-!#define DLAT  (2.5)
+#define NLAT  (72)
+#define GLAT1 (-88.75)
+#define DLAT  (2.5)
 !
 ! Longitude dimension:
-!#define NLON  (144)
-!#define GLON1 (-180.)
-!#define DLON  (2.5)
+#define NLON  (144)
+#define GLON1 (-180.)
+#define DLON  (2.5)
 !
+#endif
 !------------------------------------
 ! Vertical column dimension:
 ! There are 2 supported vertical resolutions:
@@ -41,17 +50,20 @@
 ! -7     5   0.25   56  "double resolution" 4 grid points per scale height
 !
 ! Define interface and midpoint levels
+!------------------------------------
+#ifdef LOWRES
 ! Vertical column -7 to +7 by 0.50 ("normal")
 #define ZIBOT (-7.0)
 #define ZITOP (7.0)
 #define ZMBOT (-6.75)
 #define ZMTOP (7.25)
 #define NLEV (28)
-!
+!------------------------------------
+#else
 ! Vertical column -7 to +7 by 0.25 ("double")
-!#define ZIBOT (-7.0)
-!#define ZITOP (7.0)
-!#define ZMBOT (-6.875)
-!#define ZMTOP (7.125)
-!#define NLEV (56)
-!
+#define ZIBOT (-7.0)
+#define ZITOP (7.0)
+#define ZMBOT (-6.875)
+#define ZMTOP (7.125)
+#define NLEV (56)
+#endif

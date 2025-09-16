@@ -140,6 +140,9 @@
 !    |  'lev',lev0,lev1,'lon',lon0,lon1,lat)
 !
 ! Set local needs:
+      ! 11 Sep 25 AC initalize sigma_hall with 0
+      sigma_hall = 0.0
+!
       do i=lon0,lon1
         bgauss(i) = bmod2(i,lat) ! magnetic field strength [Gauss]
 !
@@ -304,7 +307,7 @@
         do k=lev0,lev1-1
 !
 ! ne = electron density assuming charge equilibrium [1/cm3]:
-          ne(k,i) = op(k,i)+o2p(k,i)+nop(k,i) 
+          ne(k,i) = op(k,i)+o2p(k,i)+nop(k,i)
 !
 ! Pedersen conductivity [S/m] (half level):
           sigma_ped(k,i) = qe_fac(i)*
@@ -319,7 +322,22 @@
      |       op (k,i)/(1.+rnu_op (k,i)**2)-
      |       o2p(k,i)/(1.+rnu_o2p(k,i)**2)-
      |       nop(k,i)/(1.+rnu_nop(k,i)**2))
-
+#ifdef USE_PDAF
+! 03 July 2023 AC:
+! When performing assimilation, In some situations hall conductivity
+! becomes negative (very small). Might be a numerical issue
+!
+! negative hall conductivities lead to an invalid operation in:
+!   lamda2(k+1,i) = sqrt(lamda2tmp(k,i)*lamda2tmp(k+1,i))
+! Are negative hall conductivities possible in atmopshere?
+! limit to zero, small value, or take absolute value?
+! what are the units?
+          if(sigma_hall(k,i)<0.0)then
+            write(*,*) 'encountered negative hall conductivity at lon id',
+     |                  i, ' lev id ', k, ' sigma: ', sigma_hall(k,i)
+            sigma_hall(k,i) = 0.0 ! abs(sigma_hall(k,i))
+          end if
+#endif
         enddo ! k=lev0,lev1-1
       enddo ! i=lon0,lon1
 

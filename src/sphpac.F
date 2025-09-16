@@ -3,6 +3,15 @@
 ! Open Source Academic Research License Agreement contained in the file 
 ! tiegcmlicense.txt.
 !
+! -----------------------------------------------------------------------------
+! This file was modified for the integration of the Parallel Data Assimilation
+! Framework (PDAF)
+! Armin Corbin, University of Bonn, Institute for Geodesy and Geoinformation
+!
+! 12 SEP 2022: changed (..,1) dimensions to (..,*) in lfim1
+!              to avoid out of bounds warnings using gcc11
+! -----------------------------------------------------------------------------
+!
 c  . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
 c  .                                                             .
 c  .                  copyright (c) 1998 by UCAR                 .
@@ -476,8 +485,8 @@ c
       return
       end
       subroutine lfin1(init,theta,l,m,nm,id,p3,phz,ph1,p1,p2,cp)
-      dimension       p1(l,1)    ,p2(l,1)    ,p3(id,1)   ,phz(l,1)   ,
-     1                ph1(l,1)   ,cp(1)      ,theta(1)
+      dimension       p1(l,*)    ,p2(l,*)    ,p3(id,*)   ,phz(l,*)   ,
+     1                ph1(l,*)   ,cp(1)      ,theta(1)
       nmp1 = nm+1
       if(init .ne. 0) go to 5
       ssqrt2 = 1./sqrt(2.)

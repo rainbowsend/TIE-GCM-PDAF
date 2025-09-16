@@ -6,6 +6,18 @@
 !
 ! Parallel dynamo module.
 !
+! -----------------------------------------------------------------------------
+! This file was modified for the integration of the Parallel Data Assimilation
+! Framework (PDAF)
+! Armin Corbin, University of Bonn, Institute for Geodesy and Geoinformation
+!
+! 13 JAN 2021: print error message before TIE-GCM crashes in pdynamo
+! 07 JUL 2023: allocate 'coefglb_cofum', 'fmglb', 'fpole3d_jpm2', 'c0_plt',
+!              'cofum_plt', and 'cofum_solv'
+!              array to fix  'moved from stack to static storage'
+! 09 JUL 2024: removed unnecessary save in module variables and declare
+!              pointers contiguous
+! -----------------------------------------------------------------------------
 !
       use params_module,only: nmlevp1,nmlon,nmlonp1,nlon,nlonp4,nlat,
      |  nmlat,gmlat,nmlath,nlev,nlevp1,mlev0,mlev1,nmlev_diff,dlat,spval
@@ -20,17 +32,17 @@
 !
 ! 3d pointers to fields regridded to magnetic subdomains (i,j,k):
 ! (mlon0:mlon1,mlat0:mlat1,mlev0:mlev1)
-      real,pointer,dimension(:,:,:),save :: ped_mag,hal_mag,zpot_mag, 
-     |  adotv1_mag, adotv2_mag, je1pg_mag, je2pg_mag
+      real,pointer,CONTIGUOUS,dimension(:,:,:) :: ped_mag,hal_mag,
+     |  zpot_mag, adotv1_mag, adotv2_mag, je1pg_mag, je2pg_mag
 !
 ! 2d pointers to fields on magnetic subdomains (i,j):
 ! (mlon0:mlon1,mlat0:mlat1)
-      real,pointer,dimension(:,:),save :: sini_mag,adota1_mag,
+      real,pointer,CONTIGUOUS,dimension(:,:):: sini_mag,adota1_mag,
      |  adota2_mag,a1dta2_mag,be3_mag
 !
 ! 2d coefficients and RHS terms for PDE on magnetic subdomains 
 ! including halo points:
-      real,allocatable,dimension(:,:),save :: 
+      real,allocatable,dimension(:,:) ::
      |  zigm11,     ! sigma11*cos(theta0)
      |  zigmc,      ! sigmac
      |  zigm2,      ! sigma2
@@ -40,13 +52,13 @@
      |  phimsolv,   ! solution direct from solver (nhem only)
      |  phim2d      ! solution with phihm and both nhem and shem
 #if defined(INTERCOMM) || defined(CISMAH)
-      real,allocatable,dimension(:,:),save :: 
+      real,allocatable,dimension(:,:) ::
      |  zigm1, nsrhs
 #endif
 !
 ! 3d potential and electric field on mag subdomains (see sub pthreed):
 ! (mlon0:mlon1,mlat0:mlat1,mlev0:mlev1)
-      real,allocatable,dimension(:,:,:),save :: 
+      real,allocatable,dimension(:,:,:) ::
      |  phim3d,        ! 3d electric potential
      |  ed13d,ed23d,   ! 3d electric field for current calculations
      |  ephi3d,        ! 3d eastward electric field
@@ -56,23 +68,23 @@
 !
 ! 3d electric field on geographic subdomains (see sub pefield):
 ! (nlevp1,lon0-2,lon1+2,lat0:lat1)
-      real,allocatable,dimension(:,:,:),save :: ex,ey,ez
+      real,allocatable,dimension(:,:,:) :: ex,ey,ez
 !
 ! 3d electric potential on geographic subdomains (lon0:lon1,lat0:lat1,nlevp1)
 ! This will be regridded from phim3d for output to history files.
-      real,allocatable,dimension(:,:,:),save :: phig3d
+      real,allocatable,dimension(:,:,:) :: phig3d
 !
 ! coef_rhs and coef_cofum are allocated without halo points:
-      real,allocatable,dimension(:,:),save :: 
+      real,allocatable,dimension(:,:) ::
      |  coef_rhs    ! c0(:,:,10) at subdomains (10th only, i.e., rhs)
-      real,allocatable,dimension(:,:,:),save :: coef_cofum  ! cofum(mlon0:1,mlat0:1,1-9)
+      real,allocatable,dimension(:,:,:) :: coef_cofum  ! cofum(mlon0:1,mlat0:1,1-9)
 !
 ! Fields at mag equator (mlon0:mlon1,mlev0:mlev1):
-      real,allocatable,dimension(:,:),save :: 
+      real,allocatable,dimension(:,:) ::
      |  ped_meq, hal_meq, adotv1_meq, adotv2_meq,         ! (mlon0:mlon1,mlev0:mlev1)
      |  je1pg_meq, je2pg_meq
-      real,allocatable,dimension(:,:,:),save :: fmeq_out  ! (mlon0:mlon1,mlev0:mlev1,6)
-      real,allocatable,dimension(:,:,:,:),save :: fmeq_in ! (mlon0:mlon1,mlat0:mlat1,mlev0:mlev1,6)
+      real,allocatable,dimension(:,:,:) :: fmeq_out  ! (mlon0:mlon1,mlev0:mlev1,6)
+      real,allocatable,dimension(:,:,:,:) :: fmeq_in ! (mlon0:mlon1,mlat0:mlat1,mlev0:mlev1,6)
       integer :: jlateq      ! latitude index of mag equator
       
       real,allocatable,dimension(:,:) :: ressolv ! mag subdomains w/o halos
@@ -195,8 +207,11 @@
 !
 ! Local:
       integer :: i,j,n,ier,lonend
-      real :: coefglb_rhs(nmlonp1,nmlat),coefglb_cofum(nmlonp1,nmlat,9)
+      real :: coefglb_rhs(nmlonp1,nmlat)
+      real, dimension(:,:,:), allocatable :: coefglb_cofum
       character(len=16) :: cofum_name
+!
+      allocate(coefglb_cofum(nmlonp1,nmlat,9))
 !
 ! Latitude index to mag equator (module data)
       jlateq = (nmlat+1)/2   ! index to mag equator (module data)
@@ -329,6 +344,8 @@
 !       enddo
 !     enddo
 !     write(6,*) 'L2norm (task ',mytid,' subdomain) = ',l2norm
+
+      deallocate(coefglb_cofum)
 
       if (debug) write(6,"('pdynamo returning')")
       end subroutine pdynamo
@@ -933,7 +950,7 @@
 !       if (j==1.or.j==nmlat) cycle 
 !
 ! Skip poles and equator:
-        if (j==1.or.j==nmlat.or.j==nmlat/2+1) cycle 
+        if ((j==1).or.(j==nmlat).or.(j==nmlat/2+1)) cycle
 !
         sinlm   = sin(ylatm(j))                ! sin(lam_m)
         clm2    = 1. - sinlm*sinlm             ! cos^2(lam_m)
@@ -969,10 +986,17 @@
           do i=mlon0,mlon1
             rrm(i,k)     = .5*(rrm(i,k)+rrm(i,k+1))
             rtramrm(i,k) = rtramrm(i,k)-rtramrm(i,k+1)
-            htfunc(i,k)  = sqrt(ra-.75*rrm(i,k))/htfac
+! 10 September 2025 AC:
+! prevent negative sqrt args
+            if(ra-.75*rrm(i,k)<0) then
+              ! apex radius of field line is smaller than 3/4 of zpot mag
+              write(*,*) "encountered negative argument in sqrt."
+              htfunc(i,k)  = 0.0
+            else
+              htfunc(i,k)  = sqrt(ra-.75*rrm(i,k))/htfac
+            end if
             htfunc2(i,k) = htfunc(i,k)**2
           enddo ! i=mlon0,mlon1
-
 !         write(6,"('fieldline_integrals: j=',i3,' k=',i3,' mlat0,1=',
 !    |      2i3,' mlon0,1=',2i3,' rrm(:,k)=',/,(6e12.4))") j,k,mlat0,
 !    |      mlat1,mlon0,mlon1,rrm(:,k)
@@ -1866,9 +1890,11 @@
 ! 
       integer,parameter :: nf = 7
       real :: fmsub(mlon0:mlon1,mlat0:mlat1,nf)
-      real :: fmglb(nmlonp1,nmlat,nf)
+      real, dimension(:,:,:), allocatable :: fmglb
       real :: rhs_nhem(nmlonp1,nmlat)
       integer :: i,j,jj
+!
+      allocate(fmglb(nmlonp1,nmlat,nf))
 !
 ! These calls exclude halo points in zigm11, etc.
 !
@@ -1925,6 +1951,7 @@
 !    |    'mlat',1,nmlat,0)
  
       endif ! mytid==0
+      deallocate(fmglb)
       end subroutine gather_pdyn
 !-----------------------------------------------------------------------
       subroutine productAX(cofum,phi,mlon0,mlon1,mlat0,mlat1,ax)
@@ -2296,14 +2323,62 @@
 !    |        zpotm3d(i,j,k),thetam(i)
 
             thetam(i) = acos(sqrt(thetam(i))*cosltm*(1.-eps))
-
 !           write(6,"('pthreed: i=',i4,' j=',i4,' k=',i4,' cosltm=',
 !    |        e12.4,' thetam(i)=',e12.4)") i,j,k,cosltm,thetam(i)
 
+
+! model crash
+!
+! nan values in pslot some cases
+! using unlimited hp index
+! disturbing kp index (assimilation run)
+!
+! nan backtrace
+!   pdynamo_module:pthreed: pslot
+!   pdynamo_module:pthreed: thetam
+!   pdynamo_module: zpotm3d(i,j,k)
+!       --> nan starting at some level k
+!   pdynamo_module: zpot_mag        
+!       --> real,pointer,dimension(:,:,:),save :: zpot_mag
+!       --> last level in hist files is nan
+!       --> computed by esmf regrid
+!           call esmf_regrid(geo_zpot ,mag_zpot, 'geo2mag',3)
+!           call esmf_get_3dfield(mag_zpot  ,zpot_mag,  "ZPOT    ")
+!   my_esmf: mag_zpot
+!       --> type(ESMF_Field)
+!   my_esmf: geo_zpot
+!       --> type(ESMF_Field)
+!
+!   pdynamo:dynamo_inputs: f3d(:,:,:,3) 
+!       -->  real,dimension(mlev0:mlev1,lon0:lon1,lat0:lat1,8) :: f3d
+!   pdynamo:dynamo_inputs: zpotdyn
+!   pdynamo:dynamo_inputs: zpot
+!       -->  input argument of dynamo_inputs
+!       --> called by advance
+!   fields_module: z
+!
+! 
+! nmlonp1 is magnetic nongitudes on subdomain inclusive 1 periodic field
+! real,dimension(nmlonp1) :: thetam,pslot
+! integer,dimension(nmlonp1) :: islot
+
             pslot(i) = thetam(i)*180./pi+1.
+            ! TODO Possible change of value in conversion from REAL(8) to INTEGER(4) at (1) [-Wconversion]
             islot(i) = pslot(i)
             pslot(i) = pslot(i)-float(islot(i))
-
+#ifdef USE_PDAF
+            if( islot(i) .lt. 1 .or. islot(i) .gt. 91 ) then
+              call print_loc('FATAL ERROR islot(i) is out of bounds. '//
+     |                       'Program is going to crash')
+              if(zpotm3d(i,j,k) .lt. zpotm3d(i,j,mlev0)) then
+                call print_loc('FATAL ERROR zpotm3d(i,j,k) < '//
+     |                          'zpotm3d(i,j,mlev0)')
+              end if
+              if(isnan(zpotm3d(i,j,k))) then
+                call print_loc('FATAL ERROR zpotm3d(i,j,k) is nan')
+              end if
+            end if
+#endif
             thetam(i) = ((1.-pslot(i))*table(islot(i),2)+pslot(i)*
      |        table(islot(i)+1,2))*sym ! thetam negative for south hem
 
@@ -2576,7 +2651,7 @@
 !
 ! Local:
       integer :: i,ii,j,k,lonbeg,lonend
-      real :: fpole3d_jpm2(nmlonp1,4,mlev0:mlev1,1) ! global lons at S pole+1,2 and N pole-1,2
+      real, dimension(:,:,:,:), allocatable :: fpole3d_jpm2 ! global lons at S pole+1,2 and N pole-1,2
       real :: fpoles(nmlonp1,2,mlev0:mlev1) ! global lons at poles
       real :: phi3d(mlon0-1:mlon1+1,mlat0-1:mlat1+1,mlev0:mlev1)
       real :: csth0
@@ -2586,6 +2661,8 @@
      |  exgeo,eygeo,ezgeo
 
       if (debug) write(6,"('Enter pefield: istep=',i3)") istep
+
+      allocate(fpole3d_jpm2(nmlonp1,4,mlev0:mlev1,1))
 
 !     do j=mlat0,mlat1
 !       call addfld('PHIM3D_EFLD',' ','VOLTS',
@@ -2759,6 +2836,8 @@
      |    lon0,lon1,j)
       enddo
 
+      deallocate(fpole3d_jpm2)
+
       if (debug) write(6,"('pefield returning')")
       end subroutine pefield
 !-----------------------------------------------------------------------
@@ -2784,7 +2863,7 @@
       integer :: j
       character(len=8) :: fnames(1)
       type(ESMF_Field) :: magfields(1)
-      real,pointer,dimension(:,:,:) :: fptr
+      real,pointer,CONTIGUOUS,dimension(:,:,:) :: fptr
 
       fgeo = 0.
       fnames(1) = fname
@@ -2867,7 +2946,7 @@
       integer :: j,k
       character(len=8) :: fnames(1)
       type(ESMF_Field) :: geofields(1)
-      real,pointer,dimension(:,:,:) :: fptr
+      real,pointer,CONTIGUOUS,dimension(:,:,:) :: fptr
       real :: fgeotmp(mlev0:mlev1,lon0:lon1,lat0:lat1)
       integer :: lbnd(3),ubnd(3)
 
@@ -3017,8 +3096,10 @@
       integer :: i,j,jj,jjj,j0,n,ncc,nmaglon,nmaglat
       real :: sym
       real :: cs(nmlat0)
-      real :: c0_plt(nmlonp1,nmlat,10)
-      real :: cofum_plt(nmlonp1,nmlat,9)
+      real, dimension(:,:,:), allocatable :: c0_plt, cofum_plt
+!
+      allocate(c0_plt(nmlonp1,nmlat,10))
+      allocate(cofum_plt(nmlonp1,nmlat,9))
 !
 ! Set index array nc and magnetic latitude cosine array:
 ! nc pointes to the start of the coefficient array for each level
@@ -3250,6 +3331,8 @@ c      enddo
 !    |  'mlon',1,nmlonp1,'mlat',1,nmlat,0)
 !     call addfld('COFUM_09',' ',' ',cofum_plt(:,:,9),
 !    |  'mlon',1,nmlonp1,'mlat',1,nmlat,0)
+      deallocate(c0_plt)
+      deallocate(cofum_plt)
 
       end subroutine stencils
 !-----------------------------------------------------------------------
@@ -3869,7 +3952,9 @@ c      enddo
       integer :: i,j,jntl,ier,isolve
       real :: l2norm
       real,dimension(nmlon0,nmlat0)   :: ressolv
-      real,dimension(nmlon0,nmlat0,9) :: cofum_solv
+      real, dimension(:,:,:), allocatable :: cofum_solv
+!
+      allocate(cofum_solv(nmlon0,nmlat0,9))
 
 ! Module data:
 ! real,dimension(nmlonp1,nmlat,2) :: rim_glb ! pde solver output
@@ -3918,6 +4003,7 @@ c      enddo
       end do
 !     write(6,*) 'L2norm (global root task) = ',l2norm
 
+      deallocate(cofum_solv)
       end subroutine solver
 !-----------------------------------------------------------------------
 

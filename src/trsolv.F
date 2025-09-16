@@ -1,3 +1,21 @@
+! AC 11 SEP 2025 Add this explanation
+!
+! A tridiagonal matrix has the form
+!
+!       |  b1 c1            |
+!       |  a2 b2 c2         |
+!       |     a3 b3 c3      |
+!  A =  |        a4 b4 c4   |
+!       |           c5 b5   |
+!       |               ... |
+!
+! A tridiagonal linear equation system is given by
+!
+! A x = b
+!
+! and can be solved efficently by Thomas algorithm
+!
+!--------------------------------------------
 !
       subroutine trsolv(a,b,c,f,x,lev0,lev1,k1,k2,lon0,lon1,lonmax,lat,
      |  idebug)
@@ -105,3 +123,66 @@
      |    'lev',lev0,lev1-1,'lon',lon0,lon1,lat)
 
       end subroutine trsolv
+
+! AC 11 SEP 2025
+! added lapack solver
+      subroutine trsolv2(a,b,c,f,x,lev0,lev1,k1,k2,lon0,lon1,lonmax,lat,
+     |  idebug)
+
+      implicit none
+
+! Args:
+      integer,intent(in) :: lev0,lev1,k1,k2,lon0,lon1,lonmax,lat,idebug
+      real,dimension(lev0:lev1,lon0:lon1),intent(in) ::
+     |  a, ! input coefficients
+     |  b, ! input coefficients
+     |  c, ! input coefficients
+     |  f  ! input RHS
+      real,dimension(lev0:lev1,lon0:lon1),intent(out) ::
+     |  x  ! output
+!
+! Local:
+      integer :: i,lonbeg,lonend
+
+!
+! Set lonbeg,lonend (e.g., 3->74 at 5x resolution):
+      lonbeg = lon0
+      if (lon0==1) lonbeg = 3
+      lonend = lon1
+      if (lon1==lonmax) lonend = lon1-2
+
+      do i=lonbeg,lonend
+        call trsolvlu(lev1-lev0,
+     |                a(lev0+1:lev1-1,i),
+     |                b(lev0:lev1-1,i),
+     |                c(lev0:lev1-2,i),
+     |                f(lev0:lev1-1,i),
+     |                x(lev0:lev1-1,i))
+      enddo
+
+      end subroutine
+
+      subroutine trsolvlu(n,a,b,c,f,x)
+
+      implicit none
+
+! Args:
+      integer, intent(in) :: n
+      real,dimension(n-1),intent(in) :: a ! sub-diagonal elements
+      real,dimension(n),intent(in) :: b   ! diagonal elements
+      real,dimension(n-1),intent(in) :: c ! super-diagonal elements
+      real,dimension(n),intent(in) :: f   ! rhs
+      real,dimension(n),intent(out) :: x  ! solution
+
+! local
+
+      real, dimension(n-2) :: du2
+      integer, dimension(n) :: ipiv
+      integer :: info
+
+      call dgttrf (n,a,b,c,du2,ipiv,info)
+
+      x=f
+      call dgttrs('N',n,1,a,b,c,du2,ipiv,x,n,info)
+
+      end subroutine

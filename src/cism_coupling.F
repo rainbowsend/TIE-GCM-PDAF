@@ -16,6 +16,14 @@
 !!    INTERCOMM        !!  cism_intercomm.F   !! High-performance     !!
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 !-----------------------------------------------------------------------
+! -----------------------------------------------------------------------------
+! This file was modified for the integration of the Parallel Data Assimilation
+! Framework (PDAF)
+! Armin Corbin, University of Bonn, Institute for Geodesy and Geoinformation
+!
+! 06 NOV 2019: replaced MPI_COMM_WORLD with COMM_model
+! 13 SEP 2022: use mpi_f08
+! -----------------------------------------------------------------------------
       use addfld_module,only: addfld
       use mpi_module,only: lon0,lon1,lat0,lat1
       use params_module,only: 
@@ -99,7 +107,7 @@
       use mpi_module,only: mytid
 #ifdef MPI
       use mpi_module,only: mytid, handle_mpi_err
-#include <mpif.h>
+      use mpi_f08
       integer iErr
 #endif
       integer ii,jj,js,jn
@@ -119,19 +127,19 @@
 !     (ting_pot_interp, ting_eng_interp, ting_flux_interp) into one 3d
 !     array and calling MPI_Bcast with count=3*nlat*nlonp1.
       call MPI_Bcast(ting_pot_interp, nlat*nlonp1, MPI_REAL8, 0, 
-     $     MPI_COMM_WORLD, iErr)
+     $     COMM_model, iErr)
       if (iErr .ne. 0) then
          call handle_mpi_err(iErr, 'cism_coupling.F: call mpi_bcast')
       endif
 
       call MPI_Bcast(ting_eng_interp, nlat*nlonp1, MPI_REAL8, 0, 
-     $     MPI_COMM_WORLD, iErr)
+     $     COMM_model, iErr)
       if (iErr .ne. 0) then
          call handle_mpi_err(iErr, 'cism_coupling.F: call mpi_bcast')
       endif
 
       call MPI_Bcast(ting_flux_interp, nlat*nlonp1, MPI_REAL8, 0, 
-     $     MPI_COMM_WORLD, iErr)
+     $     COMM_model, iErr)
       if (iErr .ne. 0) then
          call handle_mpi_err(iErr, 'cism_coupling.F: call mpi_bcast')
       endif

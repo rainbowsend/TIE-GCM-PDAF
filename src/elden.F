@@ -9,6 +9,16 @@
 ! Solve for electron density.
 ! Also calculate ions N+ (nplus), N2+ (n2p), NO+ (nop), and O2+ (o2p).
 !
+! -----------------------------------------------------------------------------
+! This file was modified for the integration of the Parallel Data Assimilation
+! Framework (PDAF)
+! Armin Corbin, University of Bonn, Institute for Geodesy and Geoinformation
+!
+! 22 JUN 2023: when compiling with PDAF use eigenvalue approach to
+!              get roots of polynom
+! 28 JUN 2023: Use vectorized vquart routine which checks for negative arguments
+!              in root
+! -----------------------------------------------------------------------------
       use cons_module,only: p0,expz,boltz,rmassinv_o2,rmassinv_n2d,
      |  rmassinv_o1,rmassinv_n2,rmassinv_no,rmassinv_n4s
       use chemrates_module,only: rk1,rk2,rk3,rk4,rk5,rk6,rk7,rk8,
@@ -188,7 +198,20 @@
 !
 ! Solve quartic. Vquart returns electron density Ne in root:
 !
-      call vquart(a0,a1,a2,a3,a4,root,lev0,lev1,lon0,lon1,lat)
+!
+!  calculating root via eigenvalue is much slower than the algorithm in vquart
+!       call vquart_eig(a0,a1,a2,a3,a4,root,lev0,lev1,lon0,lon1,lat)
+!
+!        call vquart(a0,a1,a2,a3,a4,root,lev0,lev1,lon0,lon1,lat)
+! AC 28 JUN 23 use vectorized version of vquart
+!              that checks for negative values in roots
+      call vquart_vectorized(a0(lev0:lev1-1,:),
+     |                       a1(lev0:lev1-1,:),
+     |                       a2(lev0:lev1-1,:),
+     |                       a3(lev0:lev1-1,:),
+     |                       a4(lev0:lev1-1,:),
+     |                       root(lev0:lev1-1,:),
+     |                       lev0,lev1-1,lon0,lon1,lat)
 
 !     call addfld('ROOT',' ',' ',root,'lev',lev0,lev1,'lon',i0,i1,lat)
 !
@@ -265,7 +288,7 @@
 ! only one of which is positive.
 !
 ! This is called by elden for electron density.
-! 
+!
 ! Args:
       integer,intent(in) :: lev0,lev1,lon0,lon1,lat
       real,dimension(lev0:lev1,lon0:lon1),intent(in)  :: a0,a1,a2,a3,a4
@@ -292,7 +315,7 @@
 !
 ! root=rlam=-2.*real((.5*(cmplx(cg,0.)+csqrt(cmplx(cg**2+4.
 !      *ch**3+e,0.)))+cmplx(e,0.))**(1./3.))
-! 
+!
           root(k,i) = -2.*real((.5*(cmplx(w2(k,i),0.)+
      |      csqrt(cmplx(w2(k,i)**2+4.*w1(k,i)**3+e,0.)))+
      |      cmplx(e,0.))**(1./3.))
@@ -333,3 +356,136 @@
 !     call addfld('VQROOT',' ',' ',root,'lev',lev0,lev1,'lon',i0,i1,lat)
 
       end subroutine vquart
+!-----------------------------------------------------------------------
+      subroutine vquart_vectorized(a0,a1,a2,a3,a4,
+     |                             root,lev0,lev1,lon0,lon1,lat)
+
+      implicit none
+!
+! Determines five roots of the equation:
+!   a4*x**4 + 4.*a3*x**3 + 6.*a2*x**2 + 4.*a1*x + a0 = 0.
+!
+! Procedure is specificlly designed for real quartics with real roots
+! only one of which is positive.
+!
+! This is called by elden for electron density.
+!
+! Args:
+      integer,intent(in) :: lev0,lev1,lon0,lon1,lat
+      real,dimension(lev0:lev1,lon0:lon1),intent(in)  :: a0,a1,a2,a3,a4
+      real,dimension(lev0:lev1,lon0:lon1),intent(out) :: root
+!
+! Local:
+
+      real,dimension(lev0:lev1,lon0:lon1) :: w1,w2,w3 ! work arrays
+      real,parameter :: e=1.e-300 ! largest exponent on ieee is about 307
+!
+
+! w1 = ch
+      w1 = -(a4*a0-4.*a3*a1+3.*a2**2)/12.
+!
+! w2 = cg
+      w2 = (a4*(a2*a0-a1**2)-a3*(a3*a0-a1*a2)+a2*(a3*a1-a2**2))/4.
+!
+! root=rlam=-2.*real((.5*(cmplx(cg,0.)+csqrt(cmplx(cg**2+4.
+!      *ch**3+e,0.)))+cmplx(e,0.))**(1./3.))
+!
+      root = -2.*real((.5*(cmplx(w2,0.)+sqrt(cmplx(w2**2+4.*w1**3+e,0.)))
+     |                 +cmplx(e,0.))**(1./3.))
+!
+! W1=P=SQRT(A(5)*RLAM+A(4)**2-A(5)*A(3)+E)
+!
+          w1 = a4*root+a3**2-a4*a2+e
+          where(w1 < 0.) w1 = 0.
+          w1 = sqrt(w1)
+!
+! W2=Q=SQRT((2.*RLAM+A(3))**2-A(5)*A(1)+E)
+!
+          w2 = sqrt((2.*root+a2)**2-a4*a0+e)
+!
+! W3=PQ=2.*A(4)*RLAM+A(4)*A(3)-A(5)*A(2)+E
+!
+          w3 = 2.*a3*root+a3*a2-a4*a1+e
+!
+!  W1=P=SIGN(P,Q*PQ)
+!
+          w1 = sign(w1,w2*w3)
+!
+! W3=P-A4
+!
+          w3 = w1-a3
+!
+! Final evaluation of root:
+!
+          root = w3**2-a4*(a2+2.*root-w2)
+          where (root>=0)
+            root = (w3+sqrt(root))/a4
+          elsewhere
+            ! negative value would result in complex root.
+            ! polynom does not have a positive real root
+            root = 1
+          end where
+
+      end subroutine
+
+#ifdef USE_PDAF
+      subroutine vquart_eig(a0,a1,a2,a3,a4,root,lev0,lev1,lon0,lon1,lat)
+
+      use default_lapack_interface, only: default_DGEEV_nxn
+      use array_print_module, only: printMat
+
+      implicit none
+!
+! Determines the real and positive root of:
+!   a4*x**4 + 4.*a3*x**3 + 6.*a2*x**2 + 4.*a1*x + a0 = 0.
+!
+! Usinge eigenvalues
+!
+! This is called by elden for electron density.
+!
+! Args:
+      integer,intent(in) :: lev0,lev1,lon0,lon1,lat
+      real,dimension(lev0:lev1,lon0:lon1),intent(in)  :: a0,a1,a2,a3,a4
+      real,dimension(lev0:lev1,lon0:lon1),intent(out) :: root
+!
+! Local:
+      integer :: k,i
+      real, dimension(4,4) :: A
+      complex, dimension(4) :: V
+      real, dimension(5) :: polynom
+      integer :: u
+      logical, dimension(4) :: mask
+      real :: root_eig(1)
+
+
+      do i=lon0,lon1
+        do k=lev0,lev1-1
+
+        A=0
+        V=0
+        do u=2,4
+          A(u,u-1) = 1
+        end do
+        !a4*x**4 + 4.*a3*x**3 + 6.*a2*x**2 + 4.*a1*x + a0 = 0.
+        polynom = (/a4(k,i),4*a3(k,i),6*a2(k,i),4*a1(k,i),a0(k,i)/)
+        if(any(isnan(polynom))) then
+          write(*,*) 'WARNING polynom contains nans'
+          root(k,i) = 1
+          cycle
+        end if
+        A(1,1:4) = -polynom(2:5)/polynom(1)
+c         call printMat(A,"A",order=(/2,1/))
+        call default_DGEEV_nxn(A,4,V)
+        mask=((V%im==0).and.(V%re>0))
+        if(count(mask)==1)then
+          root_eig=pack(V%re, mask)
+          root(k,i) = root_eig(1)
+c           write(*,*) 'root from eigenvalue decomposition: ', root(k,i)
+        else
+          write(*,*) 'WARNING failed to find the root'
+          root(k,i) = 1
+        end if
+      enddo ! k=lev0,lev1-1
+      enddo ! i=lon0,lon1
+      end subroutine
+#endif

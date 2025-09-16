@@ -8,6 +8,13 @@
 !
 ! Calculate background ionization rates and add to rates from qrj. 
 !
+! -----------------------------------------------------------------------------
+! This file was modified for the integration of the Parallel Data Assimilation
+! Framework (PDAF)
+! Armin Corbin, University of Bonn, Institute for Geodesy and Geoinformation
+!
+! 23 JUN 2023: check if densities o2i o1i are negative
+! -----------------------------------------------------------------------------
       use lbc,only: fb,b
       use cons_module,only: rmassinv_o2,rmassinv_o1,rmassinv_n2,
      |  rmassinv_no
@@ -78,6 +85,15 @@
       do i=lon0,lon1
         o2i(1,i) = .5*((b(i,1,1)+1.)*o2(1,i)+b(i,1,2)*o1(1,i)+fb(i,1))
         o1i(1,i) = .5*(b(i,2,1)*o2(1,i)+(b(i,2,2)+1.)*o1(1,i)+fb(i,2))
+! 23.7.23 AC prevent negative o2i and o1i
+      if (o2i(1,i) < 0) then
+        write(*,*) 'WARNING o2i(1',i,') is negative.'
+        o2i(1,i) = 1E-12
+      end if
+      if (o1i(1,i) < 0) then
+        write(*,*) 'WARNING o1i(1',i,') is negative.'
+        o1i(1,i) = 1E-12
+      end if
 !
 ! btf tiegcm_he 8/21/13: Not sure about n2i bottom boundary. 
 ! For now, use 1-o2i-o1i since helium is negligible at this height.

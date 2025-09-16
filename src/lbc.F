@@ -5,6 +5,15 @@
 ! Open Source Academic Research License Agreement contained in the file 
 ! tiegcmlicense.txt.
 !
+! -----------------------------------------------------------------------------
+! This file was modified for the integration of the Parallel Data Assimilation
+! Framework (PDAF)
+! Armin Corbin, University of Bonn, Institute for Geodesy and Geoinformation
+!
+! 31 AUG 2021: enable perturbation of tlbc, zlbc, ulbc
+!              and vlbc, when using PDAF
+! -----------------------------------------------------------------------------
+!
 ! Calculate lower boundary conditions for T,U,V,Z
 !
       use params_module,only: nlonp4,nlat,nlev,dz
@@ -82,6 +91,10 @@
      |  tidi_u,tidi_v
       use ctmt_module,only: get_ctmt,ctmt_t,ctmt_z,ctmt_u,ctmt_v
       use hist_module,only: modeltime
+#ifdef USE_PDAF
+      use model_parameter_handling_module, only: param_tlbc, param_zlbc,
+     |                                           param_ulbc, param_vlbc
+#endif
 
       implicit none
 !
@@ -241,6 +254,17 @@
           enddo
         enddo
       endif
+! Add PDAF perturbations (lower boundary offset)
+#ifdef USE_PDAF
+      ! in dt.F
+      !   tnlbc(:,lat) = t_lbc(lon0:lon1,lat)
+      !    ...
+      !   tlbc(lon0:lon1,lat)    = tnlbc(:,lat)
+      call param_tlbc%handle(t_lbc)
+      call param_zlbc%handle(z_lbc)
+      call param_ulbc%handle(u_lbc)
+      call param_vlbc%handle(v_lbc)
+#endif
 !
 ! Save 2d boundaries to secondary histories:
 !     call addfld('T_LBC','T_LBC',' ',t_lbc(lon0:lon1,lat0:lat1),

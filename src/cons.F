@@ -6,6 +6,18 @@
 ! Open Source Academic Research License Agreement contained in the file 
 ! tiegcmlicense.txt.
 !
+! -----------------------------------------------------------------------------
+! This file was modified for the integration of the Parallel Data Assimilation
+! Framework (PDAF)
+! Armin Corbin, University of Bonn, Institute for Geodesy and Geoinformation
+!
+! 20 JUN 2022: allocate difk since it is larger than limit set
+!              by ‘-fmax-stack-var-size=’
+! 21 JUN 2022: made difk, dift, and xmue allocatable
+!              added variables used in the computation of diff_fac in comp.F
+!              (exp_diff_fac_o2, exp_diff_fac_o1, exp_diff_fac_n2). This is
+!              used for calibration
+! -----------------------------------------------------------------------------
       use params_module,only: dlat,dz,nlon,nlonp1,nlonp4,nlat,nlatp1,
      |  dlev,nlev,nmlat,nmlon,nmlonp1,zmbot,zmtop,zibot,zitop,dlon,
      |  glon,glat,glon1,glat1,zpmid,zpint,gmlon,gmlat,zpmag,zpimag,
@@ -124,13 +136,19 @@
      |  cor(nlat),
      |  grav,           ! accel due to gravity (dependent on lower boundary)
      |  dzgrav,         ! grav/gask C(65)
-     |  difk(nlev+1,ndays),   ! background eddy diffusion
-     |  dift(nlev+1,ndays),   ! background thermal conductivity
-     |  xmue(nlev+1,ndays),   ! eddy viscosity (?)
      |  zbound          ! background low bound of Z (formerly ZBA in annual tide)
+      real, allocatable, dimension(:,:) ::
+     | difk, ! background eddy diffusion
+     | dift, ! background thermal conductivity
+     | xmue  ! eddy viscosity (?)
+! exponent factor for diff_fac for o2,o,n2
+      real :: exp_diff_fac_o2 =1.710
+      real :: exp_diff_fac_o1 =1.749
+      real :: exp_diff_fac_n2 =1.718
 !
 ! Constants for dynamo and electric field calculations:
-      real,parameter :: h0 =9.0e6, r0 =re+h0    ! use mean earth radius
+      ! 90 km + 6371.22 km
+      real,parameter :: h0 =9.0e6, r0 =re+h0    ! use mean earth radius (cm)
 !
 ! Save gdlat,gdlon(nmlonp1,nmlat) in degrees from apex for sub define_mag (mpi.F)
 !     real,dimension(nmlonp1,nmlat) :: gdlatdeg,gdlondeg
@@ -217,6 +235,11 @@
       integer :: calday(ndays)         ! calenday day in a year
       real :: coeff(9)
       real :: theta(ndays)
+!
+
+      allocate(difk(nlev+1,ndays))
+      allocate(dift(nlev+1,ndays))
+      allocate(xmue(nlev+1,ndays))
 !
 ! Begin calculation of eddy diffusivity:
       if (eddy_dif > 0) then ! use DOY-dependent eddy diffusion

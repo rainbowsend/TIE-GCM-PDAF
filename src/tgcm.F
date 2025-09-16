@@ -5,16 +5,29 @@
 ! Open Source Academic Research License Agreement contained in the file 
 ! tiegcmlicense.txt.
 !
+! -----------------------------------------------------------------------------
+! This file was modified for the integration of the Parallel Data Assimilation
+! Framework (PDAF)
+! Armin Corbin, University of Bonn, Institute for Geodesy and Geoinformation
+!
+! 29 OCT 2019: added PDAF calls
+! 06 NOV 2019: replaced MPI_COMM_WORLD with COMM_model
+! 09 MAR 2020: read namlist configuration file for assimilation settings.
+! 17 DEC 2020: option to override source file specified in tie-gcm namelist.
+!              this enables us to initalize each model instance with its own
+!              start state
+! 06 JUL 2023 removed unused variables
+! -----------------------------------------------------------------------------
+!
 ! Main program for tgcm models.
 !
 ! initial cvs import was tiegcm1
 !
       use params_module,only: tgcm_version
-      use input_module,only: input,dynamo,step,cwd,pid,hpss_path,
+      use input_module,only: input,dynamo,step,cwd,hpss_path,
      |  potential_model,start_year
       use dispose_module,only: init_dispose
-      use fields_module,only: itp
-      use init_module,only: init,iyear
+      use init_module,only: init
       use hist_module,only: nstep
       use advance_module,only: advance
       use cons_module,only: init_cons
@@ -36,6 +49,14 @@
      |  mpi_timing,time_totalrun
       use my_esmf,only: esmf_init
 #endif
+#ifdef USE_PDAF
+      use configuration,only: read_config, cfg_ensemble
+      use mod_parallel_pdaf,only: n_modeltasks
+      use nc_debug, only: init_nc_debug
+      use ensemble_module, only: set_source
+      use netcdf_functionality, only: init_start_time
+      use model_parameter_module, only: init_parameter_module
+#endif
 #if defined(INTERCOMM) || defined(CISMAH)
       use cism_coupling_module,only: initialize,finalize
 #endif
@@ -45,19 +66,18 @@
       implicit none
 !
 ! Local:
-      integer :: ier,icount_tgcm,icount_apex
+      integer :: ier
       real :: cpu1,cpu2
-      character(len=8) ::
-     |  rundate,           ! current local date
-     |  runtime            ! current local time
       real ::
-     |  time0,     time1,
      |  time0_apx, time1_apx,
      |  time0_run, time1_run,
      |  time0_init,time1_init
       real :: starttime,endtime
       real :: hours,days
       real,external :: mpi_wtime
+#ifdef USE_PDAF
+      character(len=256) :: pdaf_config_file
+#endif
 !
 #ifndef IRIX
       call cpu_time(cpu1)
@@ -82,6 +102,25 @@
       if (mpi_timing) starttime = mpi_wtime()
 #endif
 
+#ifdef USE_PDAF
+! number of model tasks/ensemble_size is required in init_parallel_pdaf
+! Thus we nead to read configuration befor init
+      call init_start_time()
+
+      call get_command_argument(2, pdaf_config_file)
+
+      call read_config(pdaf_config_file)
+      n_modeltasks = cfg_ensemble%ensemble_size
+
+! This routine is inserted close to the start of the model code.
+! If the model itself is parallelized the correct location is directly
+! after the initialization of the parallelization in the model code.
+! init_parallel_pdaf creates the parallel environment that allows to
+! perform several time stepping loops ("model tasks") at the same time.
+! Revise parallelization for ensemble assimilation
+      call init_parallel_pdaf(0, 2)
+#endif
+
 !
 ! Initialize timing (must be called after mp_init):
       call init_timer
@@ -98,6 +137,14 @@
 !
       call input(mytid,ntask) ! get user input (mpi)
       if (mytid==0.and.len_trim(hpss_path) > 0) call init_dispose
+#ifdef USE_PDAF
+! must be called after input (requires model time), but before apxparm
+      call init_parameter_module
+! if alternative source files are provided override source setting 
+      if( cfg_ensemble%overwrite_source .eqv. .true. )then
+        call set_source()
+      end if
+#endif
 !
 ! set_geogrid and consdyn (both in cons.F) must be called before
 ! mp_distribute, for use by sub define_mag.
@@ -161,6 +208,21 @@
       call init_lbc ! lbc module
 
       call timer(time0_init,time1_init,'INIT',1,0) ! end init timing
+
+#ifdef USE_PDAF
+! This routine is added after the initialization part of the model.
+! In init_pdaf, parameters for PDAF can be defined and then the
+! core initialization routine PDAF_init is called. This core routine
+! also initializes the array of ensemble states. Subsequently, the
+! PDAF-core routines PDAF_get_state is called. This routine initializes
+! model fields from the array of ensemble states and initializes the
+! number of time steps that have to be computed and ensures that the
+! ensemble integration is performed correctly.
+      call init_pdaf()
+
+! For debug netcdf files
+!      call init_nc_debug(trim(cwd)//"/debug.nc")
+#endif
 !
 ! Advance the model (timing in main time-step loop is done in advance):
       call advance
@@ -192,17 +254,25 @@
       call finalize
 #endif
 !
-! Finalize mpi:
+! Report detailed mpi timing (see mpi.F):
 !
 #ifdef MPI
-!
-! Report detailed mpi timing (see mpi.F):
       if (mpi_timing) then
         endtime = mpi_wtime()
         time_totalrun = time_totalrun+(endtime-starttime)
         call report_mpi_timing
       endif
+#endif
 !
+! Finalize PDAF:
+!
+#ifdef USE_PDAF
+      call finalize_pdaf
+#endif
+!
+! Finalize mpi:
+!
+#ifdef MPI
 ! report_mpitime reports on dynamo timing using mpi_wtime function.
       call report_mpitime
       call mp_close ! mpi.F

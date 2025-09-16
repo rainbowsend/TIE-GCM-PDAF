@@ -4,6 +4,14 @@
 ! This software is part of the NCAR TIE-GCM.  Use is governed by the 
 ! Open Source Academic Research License Agreement contained in the file 
 ! tiegcmlicense.txt.
+! -----------------------------------------------------------------------------
+! This file was modified for the integration of the Parallel Data Assimilation
+! Framework (PDAF)
+! Armin Corbin, University of Bonn, Institute for Geodesy and Geoinformation
+!
+! 14 SEP 2022: added if condition 'if(n>0) then'
+!              to avoid out of bounds warnings using gcc
+! -----------------------------------------------------------------------------
 !
 ! Compute scalar surface Laplacian:  Nabla^2 F = 1/sin(theta)*d/d(theta)*
 !  (sin(theta)*dF/d(theta)) + 1/sin^2(theta)*d^2*F/d(phi)^2 using a 
@@ -103,12 +111,14 @@
             amn(0,n) = amn(0,n)+zmn(lat,0,n)*fx(1,lat)
           enddo 
           ! m=1,n
-          do m=1,n
-            do lat=1,nlat
-              amn(m,n) = amn(m,n)+zmn(lat,m,n)*fx(2*m+1,lat)
-              bmn(m,n) = bmn(m,n)+zmn(lat,m,n)*fx(2*m+2,lat)
-            enddo
-          enddo ! m=1,n
+          if(n>0) then
+            do m=1,n
+              do lat=1,nlat
+                amn(m,n) = amn(m,n)+zmn(lat,m,n)*fx(2*m+1,lat)
+                bmn(m,n) = bmn(m,n)+zmn(lat,m,n)*fx(2*m+2,lat)
+              enddo
+            enddo ! m=1,n
+          end if
         enddo ! n=0,nmax-1
         ! for (no) truncation (un)comment the following loops
         ! n=nmax;m=0
@@ -136,14 +146,16 @@
             fx(1,lat) = fx(1,lat)-n*(n+1)*amn(0,n)*pmn(lat,0,n)         ! A(0)
           enddo
           ! m=1,n
-          do m=1,n
-            do lat=1,nlat
-              fx(2*m+1,lat) = fx(2*m+1,lat)-n*(n+1)*amn(m,n)*
-     |                        pmn(lat,m,n)                              ! A(1),A(2),...
-              fx(2*m+2,lat) = fx(2*m+2,lat)-n*(n+1)*bmn(m,n)*
-     |                        pmn(lat,m,n)                              ! B(1),B(2),...
-            enddo
-          enddo ! m=1,n
+          if(n>0) then
+            do m=1,n
+              do lat=1,nlat
+                fx(2*m+1,lat) = fx(2*m+1,lat)-n*(n+1)*amn(m,n)*
+     |                          pmn(lat,m,n)                              ! A(1),A(2),...
+                fx(2*m+2,lat) = fx(2*m+2,lat)-n*(n+1)*bmn(m,n)*
+     |                          pmn(lat,m,n)                              ! B(1),B(2),...
+              enddo
+            enddo ! m=1,n
+          end if
         enddo ! n=0,nmax-1
         ! for (no) truncation (un)comment the following loops
         ! n=nmax;m=0

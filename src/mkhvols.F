@@ -5,6 +5,15 @@
 ! Open Source Academic Research License Agreement contained in the file 
 ! tiegcmlicense.txt.
 !
+! -----------------------------------------------------------------------------
+! This file was modified for the integration of the Parallel Data Assimilation
+! Framework (PDAF)
+! Armin Corbin, University of Bonn, Institute for Geodesy and Geoinformation
+!
+! 12 SEP 2022: replaced Nonconforming tab character
+!              removed unused variables
+! -----------------------------------------------------------------------------
+!
 ! Enable history mss path file name expansion, e.g.:
 ! "/USER/file1","to","/USER/file5","by","1" becomes
 ! "/USER/file1","/USER/file2",...,"/USER/file5" 
@@ -92,7 +101,7 @@
       character(len=*),intent(inout) :: str
       character(len=len(str)) :: newstr
       integer,intent(in) :: num,ndigits
-      integer :: i,ipos,ndollar
+      integer :: ipos,ndollar
       character(len=16) :: format,numstr
 !
       if (ndigits<=0) return
@@ -112,7 +121,7 @@
       subroutine replace_substr(s,subold,subnew,sout)
       character(len=*),intent(in) :: s,subold,subnew
       character(len=*),intent(out) :: sout
-      integer :: i,ii,ipos,lonsubnew,lensubold,lens
+      integer :: i,ii,ipos,lensubold,lens
 !
 ! Init sout to input s:
       sout = s
@@ -275,7 +284,7 @@
 ! building vols_out w/ encode_str.
 !
       do i=n_first,n_last,n_delta
-        ndig = int(log10(real(i)))+1	! number of digits in i
+        ndig = int(log10(real(i)))+1  ! number of digits in i
         if (ndig > ndigits) ndigits = ndigits+(ndig-ndigits)
         if (mkhvols+1 > mxout) then
           write(6,"('>>> WARNING mkhvols: too many vols -- ',

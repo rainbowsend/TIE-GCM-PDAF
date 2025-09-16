@@ -9,6 +9,13 @@ c     file muh2cr.f
 !                 it's very slow
 ! 5/02 B. Foster:
 ! Use-associate coefficients from dynamo module in tiegcm1 (dynamo.F).
+! -----------------------------------------------------------------------------
+! This file was modified for the integration of the Parallel Data Assimilation
+! Framework (PDAF)
+! Armin Corbin, University of Bonn, Institute for Geodesy and Geoinformation
+!
+! 07 JUL 2023: allocate work array to fix  'moved from stack to static storage'
+! -----------------------------------------------------------------------------
 c
 c ... required mudpack files
 c
@@ -53,7 +60,8 @@ c
       parameter (llwork=(5*((nnx+2)*(nny+2)+18*nnx*nny)/3+
      |            (nnx+2)*(nny+2)+ (iixp+1)*(jjyq+1)*(2*iixp+3)))
       parameter (iiwork=(iixp+1)*(jjyq+1))
-      real phi(nnx,nny),rhs(nnx,nny),work(llwork)
+      real phi(nnx,nny),rhs(nnx,nny)
+      real, allocatable, dimension(:) :: work
       integer iwork(iiwork)
 c
 c     put integer and floating point argument names in contiguous
@@ -76,6 +84,8 @@ c      DATA MAXCYA/20/
       DATA MAXCYA/1/
       integer mm,nn,jj,jjj
       real pi
+!
+      allocate(work(llwork))
 c
 c     set input integer arguments
 c
@@ -203,13 +213,15 @@ C
 C     COPY PHI TO PE
 C
       DO J = 1,NY
-	JJ = NY+J-1
-	JJJ = NY+1-J
-	DO I = 1,NX
-	  PE(I,JJ)  = PHI(I,J)
-	  PE(I,JJJ) = PHI(I,J)
-	END DO
+        JJ = NY+J-1
+        JJJ = NY+1-J
+        DO I = 1,NX
+          PE(I,JJ)  = PHI(I,J)
+          PE(I,JJJ) = PHI(I,J)
+        END DO
       END DO
+
+      deallocate(work)
       end
 !-----------------------------------------------------------------------      
       subroutine muh2cr(iparm,fparm,wk,iwk,rhs,phi,mgopt,

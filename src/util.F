@@ -5,6 +5,16 @@
 ! Open Source Academic Research License Agreement contained in the file 
 ! tiegcmlicense.txt.
 !
+! -----------------------------------------------------------------------------
+! This file was modified for the integration of the Parallel Data Assimilation
+! Framework (PDAF)
+! Armin Corbin, University of Bonn, Institute for Geodesy and Geoinformation
+!
+! 06 NOV 2019: replaced MPI_COMM_WORLD with COMM_model
+! 19 NOV 2021: use Fortran 2008 MPI interface
+! 22 AUG 2023: shutdown prints backtrace
+! -----------------------------------------------------------------------------
+!
 !-------------------------------------------------------------------
       integer function nextlu()
       implicit none
@@ -824,7 +834,8 @@
 ! in the second call.
 !
 #ifdef MPI
-      use mpi
+      use mpi_f08
+      use mpi_module, only: COMM_model 
 #endif
       implicit none
 !
@@ -854,7 +865,7 @@
 ! Begin: return time0 as starting time:
       if (trim(begend)=='start'.or.trim(begend)=='begin') then
 #ifdef MPI
-        call mpi_barrier(MPI_COMM_WORLD,ier)
+        call mpi_barrier(COMM_model,ier)
 #endif
 #ifdef AIX
         time0 = rtc()   
@@ -863,7 +874,7 @@
 ! End: time0 is now input, return time1-time0 in tsec:
       elseif (trim(begend)=='end') then
 #ifdef MPI
-        call mpi_barrier(MPI_COMM_WORLD,ier)
+        call mpi_barrier(COMM_model,ier)
 #endif
 #ifdef AIX
         time1 = rtc()   
@@ -874,8 +885,7 @@
 !-----------------------------------------------------------------------
       subroutine getcwdir(cwd)
 #ifdef MPI
-      use mpi_module,only: mytid
-      use mpi
+      use mpi_f08
 #endif
 !
 ! Return current working directory in cwd:
@@ -883,19 +893,27 @@
       implicit none
       character(len=*),intent(out) :: cwd
       integer,external :: isystem,nextlu
-      integer :: istat,lu,ier
+      integer :: istat,lu,ier,lencwd,rank_world
 !
 #ifdef MPI
-      if (mytid==0) then
+      CALL MPI_Comm_rank(MPI_COMM_WORLD, rank_world, ier)
+
+      if (rank_world==0) then
         istat = isystem('pwd > cwd')
         if (istat /= 0) write(6,"('>>> WARNING getcwdir: error return ',
      |    'isystem(''pwd > cwd'')')")
+     
+        lu = nextlu()
+        open(lu,file='cwd',status='old')
+        read(lu,"(a)") cwd
+        close(lu)
+        
+        lencwd = len(cwd)
       endif
-      call mpi_barrier(MPI_COMM_WORLD,ier)
-      lu = nextlu()
-      open(lu,file='cwd',status='old')
-      read(lu,"(a)") cwd
-      close(lu)
+      
+      call mpi_bcast(lencwd,1,MPI_INTEGER,0,MPI_COMM_WORLD,ier)
+      call mpi_bcast(cwd,lencwd,MPI_CHAR,0,MPI_COMM_WORLD,ier)
+
 #else
       istat = isystem('pwd > cwd')
       if (istat /= 0) write(6,"('>>> WARNING getcwdir: error return ',
@@ -938,7 +956,8 @@
       subroutine shutdown(msg)
       use my_esmf
 #ifdef MPI
-      use mpi
+      use mpi_module, only: COMM_model, mytid  
+      use mpi_f08
 #endif
 !
 ! An fatal error has occurred -- shut down the model, including MPI.
@@ -953,6 +972,8 @@
 !     character(len=80) :: errorcode
 !
       write(6,"(/,28('>'),' MODEL SHUTDOWN ',28('<'))")
+      write(6,"(a,I3,a)"), 'rank <',mytid ,'>' 
+      CALL BACKTRACE
       write(6,"('Shutdown: stop message: ',a)") trim(msg)
 #ifdef MPI
 !

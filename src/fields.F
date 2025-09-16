@@ -5,6 +5,14 @@
 ! Open Source Academic Research License Agreement contained in the file 
 ! tiegcmlicense.txt.
 !
+! -----------------------------------------------------------------------------
+! This file was modified for the integration of the Parallel Data Assimilation
+! Framework (PDAF)
+! Armin Corbin, University of Bonn, Institute for Geodesy and Geoinformation
+!
+! 20 MAR 2023: added meaningful long_names to n4s, n4s_nm and n2d
+! -----------------------------------------------------------------------------
+!
 ! There are allocatable arrays and an array of field structures for 
 !   3-d and 4-d fields. Subdomains are allocated to the allocatable 
 !   arrays, and structure data pointers point to the allocatable arrays,
@@ -258,7 +266,7 @@
       i_o1 = n ; n = n+1
 !
       allocate(n4s(levd0:levd1,lond0:lond1,latd0:latd1,2),stat=istat)
-      write(f4d(n)%long_name,"('N4S')")
+      write(f4d(n)%long_name,"('excited nitrogen atoms N(4S)')")
       f4d(n)%short_name = ("N4S")
       f4d(n)%units = "mmr"
       f4d(n)%vcoord = "midpoints"
@@ -298,7 +306,7 @@
       i_op = n ; n = n+1
 !
       allocate(n2d(levd0:levd1,lond0:lond1,latd0:latd1,2),stat=istat)
-      write(f4d(n)%long_name,"('N2D')")
+      write(f4d(n)%long_name,"('metastable excited nitrogen atoms N(2D)')")
       f4d(n)%short_name = ("N2D")
       f4d(n)%units = "mmr"
       f4d(n)%vcoord = "midpoints"
@@ -412,7 +420,7 @@
       i_o1_nm = n ; n = n+1
 !
       allocate(n4s_nm(levd0:levd1,lond0:lond1,latd0:latd1,2),stat=istat)
-      write(f4d(n)%long_name,"('N4S (TIME N-1)')")
+      write(f4d(n)%long_name,"('excited nitrogen atoms N(4S) (TIME N-1)')")
       f4d(n)%short_name = ("N4S_NM")
       f4d(n)%units = "mmr"
       f4d(n)%vcoord = "midpoints"

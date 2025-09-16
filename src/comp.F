@@ -7,6 +7,15 @@
 ! Open Source Academic Research License Agreement contained in the file 
 ! tiegcmlicense.txt.
 !
+! -----------------------------------------------------------------------------
+! This file was modified for the integration of the Parallel Data Assimilation
+! Framework (PDAF)
+! Armin Corbin, University of Bonn, Institute for Geodesy and Geoinformation
+!
+! 21 JUN 2022: replaced hard coded diffusion factor with variables. This allows
+!              the calibration of the corresponding variables
+! -----------------------------------------------------------------------------
+!
 ! Advance major species O2 and O.
 !
       use params_module,only: dz,nlonp4,nlat,dlat,nlon,glat
@@ -14,7 +23,8 @@
       use cons_module,only: pi,hor,dtr,rmassinv_o2,rmassinv_o1,
      |  rmassinv_he,rmassinv_n2,rmass_o2,rmass_o1,rmass_he,expz,expzmid,
      |  expzmid_inv,difk,dtx2inv,dtsmooth,dtsmooth_div2,difhor,
-     |  gask,grav,re,p0,sqrtpi
+     |  gask,grav,re,p0,sqrtpi,
+     |  exp_diff_fac_o2, exp_diff_fac_o1, exp_diff_fac_n2
       use chemrates_module,only: fs ! from sub comp_o2o
       use lbc,only: b,fb
       use fields_module,only: tlbc
@@ -86,7 +96,7 @@
       phi(:,3)=(/2.16,1.616,0.   /)
       phi(:,4)=(/1.11,0.769,0.322/)
 
-      ss = (/1.710, 1.749, 1.718/) ! for o2,o,n2
+      ss = (/exp_diff_fac_o2, exp_diff_fac_o1, exp_diff_fac_n2/) ! for o2,o,n2
 
       tau=1.86e+3
       thdiffalpha = -0.38  ! Thermal diff alpha coefficient for Helium 

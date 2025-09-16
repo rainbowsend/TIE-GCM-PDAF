@@ -7,6 +7,33 @@
 !
 ! Calculate needed terms vc, barm, xnmbar[i,m], and Z:
 !
+! ATTENTION 15 JAN 2021, Armin Corbin -----------------------------------------
+! barm is interpolated linearly twice: From midpoints to interfaces and
+! then from interfaces to midpoints. Interpolating twice results not in
+! the original data. Instead it is equivalent to a convolution with the
+! kernel [1/4 2/4 1/4] (this is a Gauss Kernel):
+!
+! int(k)   = (mid(k) + mid(k-1))/2
+! int(k+1) = (mid(k+1) + mid(k))/2
+!
+! mid'(k) = (int(k) + int(k+1))/2
+!         = (mid(k)/2 + mid(k-1)/2 +  mid(k+1)/2 + mid(k)/2)/2
+!         = mid(k)/4 + mid(k-1)/4 +  mid(k+1)/4 + mid(k)/4
+!         = mid(k-1)/4 + 2*mid(k)/4 + mid(k+1)/4
+!
+!
+! x = (P M)/(k T)
+!
+! P ...pressure
+! M ...mean molar mass
+! k ...boltzmann
+! T ...temperature
+!
+! xnmbarm  ...at midpoints
+! xnmbar   ...at midpoints, barm smoothed with gauss gernel
+! xnmbari  ...at interfaces
+!
+! -----------------------------------------------------------------------------
       use cons_module,only: cs,rmassinv,rmassinv_he,dz,dzgrav,
      |  freq_semidi,dt,p0,boltz,expz,expzmid,expzmid_inv,zbound
       use init_module,only: iter,igetgswm

@@ -19,6 +19,15 @@ c     the common subroutine file "mudcom.f" is attached to the end
 ! 5/02 B. Foster:
 ! Use-associate coefficients from dynamo module in tiegcm1 (dynamo.F).
 !
+! -----------------------------------------------------------------------------
+! This file was modified for the integration of the Parallel Data Assimilation
+! Framework (PDAF)
+! Armin Corbin, University of Bonn, Institute for Geodesy and Geoinformation
+!
+! 20 MAR 2020: corrected wrong dimension of iprm. 17 instead of 16
+! 07 JUL 2023: allocate 'work' array to fix  'moved from stack to static storage'
+! -----------------------------------------------------------------------------
+!
 ! BOP
 ! !IROUTINE: mud
 ! !INTERFACE:
@@ -58,12 +67,13 @@ c
 c     estimate work space for point relaxation (see mud2cr.d)
 c
       parameter (llwork=(7*(nnx+2)*(nny+2)+76*nnx*nny)/3 )
-      real phi(nnx,nny),rhs(nnx,nny),work(llwork)
+      real phi(nnx,nny),rhs(nnx,nny)
+      real, dimension(:), allocatable :: work
 c
 c     put integer and floating point argument names in contiguous
 c     storage for labelling in vectors iprm,fprm
 c
-      integer iprm(16),mgopt(4)
+      integer iprm(17),mgopt(4)
       real fprm(6)
       integer intl,nxa,nxb,nyc,nyd,ixp,jyq,iex,jey,nx,ny,
      +              iguess,maxcy,method,nwork,lwrkqd,itero
@@ -79,6 +89,8 @@ c
       DATA MAXCYA/150/
       integer mm,nn,jj,jjj
       real pi
+c
+      allocate(work(llwork))
 c
 c     set input integer arguments
 c
@@ -210,16 +222,16 @@ C
 C     COPY PHI TO PE
 C
       DO J = 1,NY
-	JJ = NY+J-1
-	JJJ = NY+1-J
-	DO I = 1,NX
-	  PE(I,JJ) = PHI(I,J)
-	  PE(I,JJJ) = PHI(I,J)
-	END DO
+        JJ = NY+J-1
+        JJJ = NY+1-J
+        DO I = 1,NX
+          PE(I,JJ) = PHI(I,J)
+          PE(I,JJJ) = PHI(I,J)
+        END DO
       END DO
-      
+
   108 continue
-  
+      deallocate(work)
       end
 !-----------------------------------------------------------------------
 c

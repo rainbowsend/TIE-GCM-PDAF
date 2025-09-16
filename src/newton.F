@@ -8,6 +8,13 @@
 !
 ! Calculate implicit and explicit cooling terms.
 !
+! -----------------------------------------------------------------------------
+! This file was modified for the integration of the Parallel Data Assimilation
+! Framework (PDAF)
+! Armin Corbin, University of Bonn, Institute for Geodesy and Geoinformation
+!
+! 24 JAN 2025: perturbation of co2 concentration
+! -----------------------------------------------------------------------------
       use params_module,only: dz
       use cons_module,only: rmass_co2,p0,expz,expzmid_inv,boltz,
      |  avto,avo,rmassinv_o2,rmassinv_o1,rmassinv_n2,rmassinv_no,
@@ -15,6 +22,11 @@
       use addfld_module,only: addfld
       use diags_module,only: mkdiag_CO2COOL,mkdiag_NOCOOL
       use init_module,only: sfeps,iday,iyear,secs,istep
+
+#ifdef USE_PDAF
+      use model_parameter_handling_module, only: param_co2u
+#endif
+
       implicit none
 !
 ! Args:
@@ -55,6 +67,9 @@
          co2u=280.0+0.30*(yfrac-1850.0)
       endif
       if (co2u < 280.0) co2u=280.0
+#ifdef USE_PDAF
+      call param_co2u%handle(co2u)
+#endif
       co2u=co2u*1.e-6
 !
 ! Integral(m(co2)*dz/mbar) (s10).

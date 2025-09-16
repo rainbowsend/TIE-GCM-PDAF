@@ -1,3 +1,11 @@
+! -----------------------------------------------------------------------------
+! This file was modified for the integration of the Parallel Data Assimilation
+! Framework (PDAF)
+! Armin Corbin, University of Bonn, Institute for Geodesy and Geoinformation
+!
+! 07 JUL 2023: allocate 'qjh_tot_sec' array
+!              to fix  'moved from stack to static storage'
+! -----------------------------------------------------------------------------
 #include "defs.h"
       subroutine amieoutput
       use params_module,only: nlonp1,nlonp4,nlevp1,nlatp1,nlat,nlev,nlon
@@ -26,7 +34,9 @@
 ! Local:
       integer :: j1,i,j,k,lonm,lonp
       real :: re
-      real, dimension(nlonp4,nlat,nlevp1) :: qjh_tot_sec
+      real, dimension(:,:,:), allocatable :: qjh_tot_sec
+!
+      allocate(qjh_tot_sec(nlonp4,nlat,nlevp1))
 !
 !CCCCCCCCCCCCCCC calculate the field-aligned currents CCCCCCCCCCCCCCCCCC
         re = 6.481e+6
@@ -150,6 +160,8 @@ CCCCCCCCCCCCCCCCCCC save secondary histories CCCCCCCCCCCCCCCCCCCCC
         call addfld('QJH_TOT',' ',' ',
      |     qjh_tot_sec(1:nlonp4,j,:),'lon',1,nlonp4,'lev',1,nlevp1-1,j)
       enddo
+
+      deallocate(qjh_tot_sec)
 
 !CCCCCCCCCCCCCCCCCC end of save secondary histories CCCCCCCCCCCCCCCCCCCCC
       end subroutine amieoutput

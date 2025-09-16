@@ -4,6 +4,19 @@
 ! Open Source Academic Research License Agreement contained in the file 
 ! tiegcmlicense.txt.
 !
+! -----------------------------------------------------------------------------
+! This file was modified for the integration of the Parallel Data Assimilation
+! Framework (PDAF)
+! Armin Corbin, University of Bonn, Institute for Geodesy and Geoinformation
+! 28 OCT 2019: deallocation of dynamically allocated gpi fields
+! 29 OCT 2019: added PDAF calls
+! 06 NOV 2019: replaced MPI_COMM_WORLD with COMM_model
+! 06 MAY 2021: write model forecasts (regridded to observations) to disk
+! 19 NOV 2021: use Fortran 2008 MPI interface
+! 23 DEC 2021: added option to supress tiegcm output
+! 06 JUL 2023 removed unused variables
+! 05 SEP 2024 print ETA
+! -----------------------------------------------------------------------------
       implicit none
 !
 ! Advance the model in time.
@@ -15,10 +28,9 @@
 ! Advance the model nstep time steps.
 !
       use fields_module
-      use hist_module,only: nstep,modeltime,nsource
+      use hist_module,only: nstep,modeltime
       use heelis_module,only: heelis
-      use wei05sc,only: weimer05,       ! Weimer 2005 model
-     |  wei05sc_fac  ! field-aligned current diagnostic (nmlonp1,nmlat)
+      use wei05sc,only: weimer05       ! Weimer 2005 model
       use input_module,only: start,step,idynamo=>dynamo,
      |  calendar_advance,gpi_ncfile,potential_model,wei05sc_ncfile,
      |  imf_ncfile,current_pg,current_kq,iamie,amie_ibkg,amiesh,amienh
@@ -35,7 +47,8 @@
      |  f107   ,f107_time   ,ntimes_f107,
      |  f107a  ,f107a_time  ,ntimes_f107a
       use init_module,only: istep,uthr,iter,secs,iday,iyear
-      use cons_module,only: dt,re,cs,racs,ylatm,rtd
+      use cons_module,only: dt,re,
+     | rmassinv_o2,rmassinv_o1,rmassinv_he
       use filter_module,only: filter
       use qrj_module,only: init_sflux
       use magfield_module,only: sunloc_apex
@@ -45,7 +58,7 @@
       use current,only: noso_crrt,noso_crdens
       use timing_module,only: timer,timing
       use mpitime_module,only: mpi_timer
-      use gpi_module,only: rdgpi,getgpi
+      use gpi_module,only: rdgpi,getgpi,deallocate_gpi_module
       use imf_module,only: getimf
       use gswm_module,only: getgswm
       use params_module,only: nlonp4,nlat,nlev
@@ -53,6 +66,22 @@
       use output,only: outhist
       use addfld_module,only: addfld
       use lbc,only: tuvz_lbc
+
+#ifdef USE_PDAF
+      use array_print_module, only: printMat
+      use configuration, only: cfg_output
+      use nc_debug, only: instant_write, advance_nc_debug
+      use result_writer_frontend, only: compute_and_write_results
+      use model_parameter_handling_module, only:
+     | write_parmeter_handling, update_model_parameters
+      use model_parameter_module, only:
+     | apply_perturbation_to_input_constants
+      use aurora_module,only:
+     | apply_perturbation_to_aurora_constants
+!      use tiegcm_optimized_interpolator, only:test_reg_grid_interpolator
+      use gpi_module,only: perturbe_gpi
+      use imf_module,only: perturbe_imf
+#endif
 !
 ! Routines and timing for parallel dynamo (pdynamo.F):
       use pdynamo_module,only: dynamo_inputs,pdynamo,pefield,
@@ -62,17 +91,17 @@
       use cism_coupling_module,only: import, export, geng,gflx
 #endif
 
-!      
+!
 ! current due to plasma pressure & gravity -> add to RHS of dynamo    
       use magpres_g, only: magpres_grav
 !
 #ifdef MPI
+      use mpi_f08
       use mpi_module,only: 
      |  mytid,mp_gather2root,mp_bndlats,ntask,lat0,lat1,lon0,lon1,
-     |  mp_bndlons,mp_polelats,mp_periodic_f4d
+     |  mp_bndlons,mp_polelats,mp_periodic_f4d, COMM_model
 !
       implicit none
-#include <mpif.h>
 #else
       implicit none
       integer :: lat0=1,lat1=nlat, lon0=1,lon1=nlonp4
@@ -83,13 +112,12 @@
 #endif
 !
 ! Local:
-      integer :: i,j,k,lat,itmp,icount_step,nlatlocal,icount_mpi,ier,
+      integer :: i,j,itmp,ier,
      |  iprint
 #if defined(INTERCOMM) || defined(CISMAH)
       integer :: cmodeltime(4) !CISM coupling time
 #endif
       real :: fmin,fmax
-      real :: polesigns(1)=1.  ! for n2 call to mp_polelats
       integer(kind=8) :: nsecs ! current model time in seconds,
                                ! including model day
       logical :: time2write,wrprim,wrsech,newseries_sech,
@@ -102,12 +130,12 @@
      |  time0_phist,    time1_phist,
      |  time0_shist,    time1_shist,
      |  time0_prep,     time1_prep,
-     |  time0_init,     time1_init,
-     |  time0_barrier,  time1_barrier
+     |  time0_init,     time1_init
       character(len=3) :: timing_type
 !
       logical :: debug=.false.
       integer :: lev0=1,lev1=nlevp1
+      real:: ref_time, current_time
 !
 ! External:
       logical,external :: wrhist,time2print
@@ -143,7 +171,11 @@
       time2write = wrhist(istep,modeltime,
      |  wrprim, newseries_prim, iseries_prim,
      |  wrsech, newseries_sech, iseries_sech)
-
+#ifdef USE_PDAF
+      if(cfg_output%supress_tiegcm_output)then
+        time2write = .false.
+      end if
+#endif
       if (time2write) then
 #ifdef MPI
 !
@@ -185,6 +217,8 @@
       if (timing%level >= 2)
      |  write(6,"('Time in INIT =          ',
      |    f12.2,' Advance: step ',i5)") time1_init,istep
+
+      call cpu_time(ref_time)
 !
 ! Main time loop:
   100 continue
@@ -197,6 +231,12 @@
       iter=iter+1
       istep = istep+1
       nsecs = nsecs+step
+!
+#ifdef USE_PDAF
+c       call print_loc('MAIN LOOP ADVANCE')
+#endif
+!
+
 #if defined(INTERCOMM) || defined(CISMAH)
       cmodeltime=modeltime             !!! CISM ad hoc coupling
 #endif
@@ -209,6 +249,11 @@
 ! (sub advance_day also updates sfeps)
 !
       if (calendar_advance > 0) call advance_day
+#ifdef USE_PDAF
+c       call print_time_info('computing time step: ')
+c      call advance_nc_debug
+      call update_model_parameters()
+#endif
       call sunloc_apex(iyear,iday,secs)! locate sun's longitude
       if (debug) write(6,"('advance after sunloc')")
       if (calendar_advance > 0) dday = real(iday)+secs/86400.
@@ -243,18 +288,37 @@
 !
 ! Get gpi data if necessary:
       if (len_trim(gpi_ncfile) > 0) then
+! in case of PDAF gpi is disturbed in rdgpi
         if (istep==1) call rdgpi ! read gpi data
         iprint = 0
         if (istep==1) iprint = 1
         call getgpi(iyear,iday,int(secs),iprint)
+#ifdef USE_PDAF
+      else
+        ! if getgpi is not called add perturbance only once
+        ! ATTENTION time variable perturbations are ignored here!
+        if(istep==1) then
+            call perturbe_gpi
+        end if
+#endif
       endif
+
 !
 ! Get imf data if necessary:
       if (len_trim(imf_ncfile) > 0) then
         iprint = 0
         if (istep==1) iprint = 1
         call getimf(iyear,iday,int(secs),istep,iprint)
+#ifdef USE_PDAF
+      else
+        ! if getimf is not called add perturbance only once
+        ! ATTENTION time variable perturbations are ignored here!
+        if(istep==1) then
+          call perturbe_imf
+        end if
+#endif
       endif
+
 !
 ! If the potential model is Weimer and power was not provided
 ! by namelist, then calculate power from bz and swvel.
@@ -297,6 +361,34 @@
 !
       call tuvz_lbc(istep,iyear,iday,secs,itp)
 !
+!
+#ifdef USE_PDAF
+! Compute and write initial ensemble
+! ATTENTION compute_and_write_results requires lower boundary conditions for
+! correct computation of ZG which is used for interpolation. lbc are initialized in
+! main loop, thus this call is also inside the loop
+      if(istep==1) then
+        if(cfg_output%write_every_sec .gt. 0) then
+          itmp = itp
+          itp = itc
+          itc = itmp
+          ! ATTENTION ZG is still 2 meter off (at upper boundary)
+          ! at 550 km error in interpolated density is smaller than 0.1%
+          call compute_and_write_results("initial")
+          itmp = itp
+          itp = itc
+          itc = itmp
+        end if
+        call write_parmeter_handling()
+      end if
+!
+!
+      call apply_perturbation_to_input_constants
+      call apply_perturbation_to_aurora_constants
+
+!       call write_parmeter_handling(.true.)
+#endif
+!
 #if defined(INTERCOMM) || defined(CISMAH)
 !
 ! Receive aurora parameters from the M-I coupler for CISM
@@ -308,8 +400,11 @@
       if (time2print(nstep,istep)) then
         if (istep > 1) then
           write(6,"('Step ',i8,' of ',i8,' mtime=',4i3,
-     |      ' secs/step (',a,') =',f6.2)") istep,nstep,modeltime,
-     |      timing_type,secs_per_step
+     |      ' secs/step (',a,') =',f6.2,
+     |      ' | passed time=',f6.1, ' min',' ETA= ',f6.1, ' min')") istep,
+     |      nstep,modeltime,timing_type,secs_per_step,
+     |      (current_time-ref_time)/60.0,
+     |      (real(nstep-istep)*(current_time-ref_time)/real(istep))/60.0
         else
           write(6,"('Step ',i8,' of ',i8,' mtime=',3i3)")
      |      istep,nstep,modeltime(1:3)
@@ -362,23 +457,23 @@
 ! Calculate vc, barm, xnmbar, and z (tn,o2,o1,vn are input).
 !
       call addiag(
-     |  tn	 (levd0,lond0,latd0,itp),   ! in
-     |  o2	 (levd0,lond0,latd0,itp),   ! in
-     |  o1	 (levd0,lond0,latd0,itp),   ! in
-     |  he	 (levd0,lond0,latd0,itp),   ! in
-     |  vn	 (levd0,lond0,latd0,itp),   ! in
-     |  vc	 (levd0,lond0,latd0,itp),   ! out
+     |  tn   (levd0,lond0,latd0,itp),   ! in
+     |  o2   (levd0,lond0,latd0,itp),   ! in
+     |  o1   (levd0,lond0,latd0,itp),   ! in
+     |  he   (levd0,lond0,latd0,itp),   ! in
+     |  vn   (levd0,lond0,latd0,itp),   ! in
+     |  vc   (levd0,lond0,latd0,itp),   ! out
      |  barm   (levd0,lond0,latd0,itp),     ! out
-     |  xnmbar (levd0,lond0,latd0),	    ! out
-     |  xnmbari(levd0,lond0,latd0),	    ! out
-     |  xnmbarm(levd0,lond0,latd0),	    ! out
+     |  xnmbar (levd0,lond0,latd0),     ! out
+     |  xnmbari(levd0,lond0,latd0),     ! out
+     |  xnmbarm(levd0,lond0,latd0),     ! out
      |  z      (levd0,lond0,latd0,itp),     ! out (note itp is output)
      |  zg     (levd0,lond0,latd0),         ! out (z with varying grav)
      |  n2     (levd0,lond0,latd0),         ! out (1.-o2-o1-he)
      |  lon0,lon1,1,nlevp1,lat0,lat1)
-!   
+!
       if (debug) write(6,"('advance after addiag')")
-
+!
 #ifdef MPI
 !
 ! Define boundary latitudes -1,0 across the south pole, and
@@ -477,7 +572,7 @@
       else  !  potential_model='NONE'
         do j=1,nmlat0
           do i=1,nmlonp1
-	    phihm(i,j) = 0.
+            phihm(i,j) = 0.
           enddo ! i=1,nmlonp1
         enddo ! j=1,nmlat0
       endif
@@ -514,18 +609,18 @@
 ! Calculate addition to electrodynamo RHS (current due to plasma 
 ! pressure and gravity)
 !
-        if (current_pg > 0) then	
+        if (current_pg > 0) then
           call timer(time0,time1,"MAGPRES_GRAV",0,0)
           call magpres_grav (
-     |      z	(levd0,lond0,latd0,itp),   ! geopotential input
-     |      te	(levd0,lond0,latd0,itp),   ! electron temperature K
-     |      ti	(levd0,lond0,latd0,itp),   ! ion temperature K
-     |      ne	(levd0,lond0,latd0,itp),   ! electron density 1/cm^3
-     |      op	(levd0,lond0,latd0,itp),   ! O+ 1/cm^3
-     |      nplus (levd0,lond0,latd0),	   ! N+  1/cm^3
-     |      n2p	(levd0,lond0,latd0),	   ! N2+ 1/cm^3
-     |      nop	(levd0,lond0,latd0),	   ! NO+  1/cm^3
-     |      o2p	(levd0,lond0,latd0,itp),   ! O2+  1/cm^3
+     |      z(levd0,lond0,latd0,itp),    ! geopotential input
+     |      te(levd0,lond0,latd0,itp),   ! electron temperature K
+     |      ti(levd0,lond0,latd0,itp),   ! ion temperature K
+     |      ne(levd0,lond0,latd0,itp),   ! electron density 1/cm^3
+     |      op(levd0,lond0,latd0,itp),   ! O+ 1/cm^3
+     |      nplus(levd0,lond0,latd0),    ! N+  1/cm^3
+     |      n2p(levd0,lond0,latd0),      ! N2+ 1/cm^3
+     |      nop(levd0,lond0,latd0),      ! NO+  1/cm^3
+     |      o2p(levd0,lond0,latd0,itp),  ! O2+  1/cm^3
      |      1,nlevp1,lon0,lon1,lat0,lat1)
           if (debug) write(6,"('advance after magpres_grav: istep=',
      |      i4)") istep
@@ -584,6 +679,7 @@
      |      idynamo
       endif ! idynamo
 !
+!
 #if defined(INTERCOMM) || defined(CISMAH)
 !
 ! Send conductance and neutral wind current to M-I coupler for CISM
@@ -595,15 +691,43 @@
         call vtend(127,ier)
 #endif
 !
+#ifdef USE_PDAF
+! assimilate_pdaf: This routine is added to the model code at the end
+! of the time stepping loop (just before the END DO in a Fortran program).
+! The routine declares the names of user-supplied routines and calls a
+! filter-specific PDAF-core routine PDAF_assimilate_X
+! (with, e.g., X=estkf, for the ESTKF). This routine has to be called at the
+! end of each time step. It counts whether all time steps of the current
+! forecast phase have been computed. IF this is not the case, the program
+! continues integrating the model. IF the forecast phase is completed,
+! the analysis step (i.e. the actual assimilation of the observations)
+! is computed. Subsequently, the next forecast phase is initialized by
+! writing the analysis state vector into the model fields and setting
+! the number of time steps in the next forecast phase.
+! (Please note: The routines PDAF_assimilate_X have been
+! introduced with Version 1.10 of PDAF.)
+       call assimilate_pdaf()
+! Barrier required only for debugging to ensure update is written for
+! all ranks before model crashes
+!       call mpi_barrier(MPI_COMM_World)
+#endif
+c       call test_reg_grid_interpolator
+!
 ! Write output history if necessary (output writes data%(:,:,:,itc)).
 !
       time2write = wrhist(istep,modeltime,
      |  wrprim, newseries_prim, iseries_prim,
      |  wrsech, newseries_sech, iseries_sech)
+#ifdef USE_PDAF
+      if(cfg_output%supress_tiegcm_output)then
+        time2write = .false.
+      end if
+#endif
 !
 ! History i/o timing is not included in STEP segment:
       call timer(time0_step,time1,'STEP',1,0) ! suspend step timing for i/o
       time1_step = time1
+!
 !
 ! If its time to write a history, root task must gather subdomain
 ! data from slave tasks before writing the history. This is done
@@ -652,7 +776,6 @@
         ulbc_nm_glb(lon0:lon1,lat0:lat1) = ulbc_nm(lon0:lon1,lat0:lat1)
         vlbc_nm_glb(lon0:lon1,lat0:lat1) = vlbc_nm(lon0:lon1,lat0:lat1)
 #endif
-!
 ! Write the history to output file:
         if (mytid==0) then
           if (debug) write(6,"('advance root call outhist')")
@@ -678,11 +801,9 @@
       call set_periodic_f4d(itc)
 #endif
 !
-! Swap field data time indices, so current updated data becomes previous
-! step data for next step:
-      itmp = itp
-      itp = itc
-      itc = itmp
+#ifdef USE_PDAF
+      call compute_and_write_results("advance")
+#endif
 !
       call timer(time0_prep,time1,'PREP',1,0) ! end prep timing
       time1_prep = time1_prep+time1
@@ -696,18 +817,27 @@
       endif
       secs_per_step = time1_step
 !
+! Swap field data time indices, so current updated data becomes previous
+! step data for next step:
+      itmp = itp
+      itp = itc
+      itc = itmp
+!
 ! Return for next time step:
       if (istep < nstep) then
 #ifdef MPI
         if (ntask > 1) then
-          call mpi_barrier(MPI_COMM_WORLD,ier) ! is this necessary??
+          call mpi_barrier(COMM_model,ier)
           if (debug) write(6,"('advance after end of step barrier')")
         endif
 #endif
         if (debug) write(6,"('advance end iteration for step ',i4)")
      |    istep
+        call cpu_time(current_time)
         goto 100
       endif
+
+      call deallocate_gpi_module
 !
 #ifdef VT
 !     code = 115 ; state = 'advance' ; activity='ModelCode'
@@ -720,7 +850,7 @@
 !
 ! Advance calendar day if needed. Also update sfeps.
 !
-      use init_module,only: iter,iyear,iday,sfeps,sundec,sin_sundec,
+      use init_module,only: iter,iyear,iday,sfeps,sin_sundec,
      |  cos_sundec
       use cons_module,only: dt,pi
       implicit none

@@ -14,6 +14,9 @@
      |  ylonm,ylatm  ! magnetic grid lons, lats
       use pdynamo_module,only: nmlat0,pfrac ! pfrac is output
       use params_module,only: nmlonp1
+#ifdef USE_PDAF
+!        use forcing_module, only: crit_perturbation
+#endif
       
       implicit none
 !
@@ -28,6 +31,11 @@
 ! To make the same as in cons.F, comment out next line
         crit(1) = crit1deg/rtd
         crit(2) = crit(1) + 15./rtd
+#ifdef USE_PDAF
+! TODO can we perturb this when using heelis (comment in cons.F)
+! constraint crit1 < crit2
+!        call crit_perturbation%apply(colfac)
+#endif
 !
 ! offc(2), dskofc(2) are for northern hemisphere aurora (see aurora.F)
 ! 01/11 bae:  Revised so that use average of both hemispheres instead of NH only

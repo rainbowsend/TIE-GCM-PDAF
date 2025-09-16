@@ -5,9 +5,17 @@
 ! Open Source Academic Research License Agreement contained in the file 
 ! tiegcmlicense.txt.
 !
+! -----------------------------------------------------------------------------
+! This file was modified for the integration of the Parallel Data Assimilation
+! Framework (PDAF)
+! Armin Corbin, University of Bonn, Institute for Geodesy and Geoinformation
+!
+! 06 NOV 2019: replaced MPI_COMM_WORLD with COMM_model
+! 13 SEP 2022: use mpi_f08
+! -----------------------------------------------------------------------------
       use params_module,only: nlevp1,nlonp4,nlat
       use addfld_module,only: addfld
-      use mpi_module,only: mpi_timing
+      use mpi_module,only: mpi_timing, COMM_model
       implicit none
 !
 ! An extra latitude is needed in fnrh and fkmh: 
@@ -525,17 +533,17 @@
       subroutine mp_bndlats_kmh(lev0,lev1,lon0,lon1,lat0,lat1)
       use mpi_module,only: mytidi,mytidj,itask_table,handle_mpi_err,
      |  time_bndlats_kmh
+      use mpi_f08
       implicit none
 !
 ! Args:
       integer,intent(in) :: lev0,lev1,lon0,lon1,lat0,lat1
-#include <mpif.h>
 !
 ! Local:
-      integer ::
-     |  irstat(MPI_STATUS_SIZE)      ! mpi receive status
+      TYPE(MPI_Request) :: ireqsend, ireqrecv
+      TYPE(MPI_Status) :: irstat
       real,allocatable :: sndbuf(:,:,:),rcvbuf(:,:,:)
-      integer :: ier,nlons,len,jprev,jnext,ireqrecv,ireqsend
+      integer :: ier,nlons,len,jprev,jnext
       real :: starttime,endtime
 #ifdef VT
 !     call vtsymdef(111, 'mp_bndlats_kmh','Communication',ier)
@@ -557,13 +565,13 @@
 !
 ! Send lat1-1,lat1 to jnext:
       sndbuf(:,:,:) = fkmh(:,lon0:lon1,lat1-2:lat1)
-      call mpi_isend(sndbuf,len,MPI_REAL8,jnext,1,MPI_COMM_WORLD,
+      call mpi_isend(sndbuf,len,MPI_REAL8,jnext,1,COMM_model,
      |  ireqsend,ier)      
       if (ier /= 0) 
      |  call handle_mpi_err(ier,'mp_bndlats_kmh send to jnext')
 !
 ! Receive lat0-2,lat0-1 from jprev:
-      call mpi_irecv(rcvbuf,len,MPI_REAL8,jprev,1,MPI_COMM_WORLD,
+      call mpi_irecv(rcvbuf,len,MPI_REAL8,jprev,1,COMM_model,
      |  ireqrecv,ier)
       if (ier /= 0) 
      |  call handle_mpi_err(ier,'mp_bndlats_kmh recv from jprev')
@@ -597,11 +605,11 @@
       subroutine mp_bndlons_kmh(lev0,lev1,lon0,lon1,lat0,lat1)
       use mpi_module,only: mytidi,mytidj,itask_table,ntaski,
      |  handle_mpi_err,time_bndlons_kmh
+      use mpi_f08
       implicit none
 !
 ! Args:
       integer,intent(in) :: lev0,lev1,lon0,lon1,lat0,lat1
-#include <mpif.h>
 !
 ! Each task receives fkmh(:,lon0-1,lat0-3:lat1) from task iprev, 
 !   and sends fkmh%data(:,lon1,lat0-3:lat1) to task inext.
@@ -609,9 +617,9 @@
 !   from task ntaski-1
 !
 ! Local:
-      integer ::
-     |  irstat(MPI_STATUS_SIZE)      ! mpi receive status
-      integer :: j,jj,ier,len,iprev,inext,isend,irecv,nlats
+      integer :: j,jj,ier,len,iprev,inext,nlats
+      TYPE(MPI_Request) :: irecv, isend
+      TYPE(MPI_Status) :: irstat
       real,allocatable :: rcvbuf(:,:),sndbuf(:,:)
       real :: fmin,fmax
       real :: starttime,endtime
@@ -635,7 +643,7 @@
 ! (if lon0==1, receive lon0-1 from task with mytidi==ntask-1)
       iprev = itask_table(mytidi-1,mytidj)
       if (lon0==1) iprev = itask_table(ntaski-1,mytidj) 
-      call mpi_irecv(rcvbuf,len,MPI_REAL8,iprev,1,MPI_COMM_WORLD,
+      call mpi_irecv(rcvbuf,len,MPI_REAL8,iprev,1,COMM_model,
      |  irecv,ier)
       if (ier /= 0) 
      |  call handle_mpi_err(ier,'mp_bndlons_kmh recv from iprev')
@@ -654,7 +662,7 @@
 !     write(6,"('Send lon1=',i2,' to inext=',i2,' sndbuf min,max=',
 !    |  2e12.4)") lon1,inext,fmin,fmax
 
-      call mpi_isend(sndbuf,len,MPI_REAL8,inext,1,MPI_COMM_WORLD,
+      call mpi_isend(sndbuf,len,MPI_REAL8,inext,1,COMM_model,
      |  isend,ier)
       if (ier /= 0) 
      |  call handle_mpi_err(ier,'mp_bndlons_kmh send to inext')

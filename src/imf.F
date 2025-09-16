@@ -4,6 +4,13 @@
 ! Open Source Academic Research License Agreement contained in the file 
 ! tiegcmlicense.txt.
 !
+! -----------------------------------------------------------------------------
+! This file was modified for the integration of the Parallel Data Assimilation
+! Framework (PDAF)
+! Armin Corbin, University of Bonn, Institute for Geodesy and Geoinformation
+!
+! 25 MAR 2022: enable perturbation of swden and swvel, when using PDAF
+! -----------------------------------------------------------------------------
       use input_module,only: imf_ncfile
       use hist_module,only: modeltime
       implicit none
@@ -177,7 +184,9 @@
       if (rd_swden == spval) swden_inp = model_swden
 !     if (rd_f107  == spval) f107_inp  = model_f107d
 !     if (rd_f107a == spval) f107a_inp = model_f107a
-
+#ifdef USE_PDAF
+      call perturbe_imf
+#endif
 !     write(6,"('getimf: data interpolated to modeltime ',3i4,':')")
 !    |  modeltime(1:3)
 !     write(6,"('  bximf,byimf,bzimf = ',3f8.2,' swvel=',f8.2,
@@ -185,6 +194,41 @@
 !    |  swvel_inp,swden_inp,f107_inp,f107a_inp
 
       end subroutine getimf
+!-----------------------------------------------------------------------
+#ifdef USE_PDAF
+      subroutine perturbe_imf
+
+      use model_parameter_handling_module, only: param_swden,
+     |                                           param_swvel,
+     |                                           param_imfbx,
+     |                                           param_imfby,
+     |                                           param_imfbz,
+     |                                           param_imfbf,
+     |                                           PARAM_HANDLING_PERTURB
+
+      use input_module,only: bximf,byimf,bzimf,swvel_inp=>swvel,
+     |  swden_inp=>swden
+      implicit none
+
+      real :: imf_magnitude
+
+      call param_swden%handle(swden_inp)
+      call param_swvel%handle(swvel_inp)
+      call param_imfbx%handle(bximf)
+      call param_imfby%handle(byimf)
+      call param_imfbz%handle(bzimf)
+      if( param_imfbf%handling == PARAM_HANDLING_PERTURB )then
+        imf_magnitude = sqrt(bximf**2+byimf**2+bzimf**2)
+        bximf = bximf/imf_magnitude
+        byimf = byimf/imf_magnitude
+        bzimf = bzimf/imf_magnitude
+        call param_imfbf%handle(imf_magnitude)
+        bximf = bximf*imf_magnitude
+        byimf = byimf*imf_magnitude
+        bzimf = bzimf*imf_magnitude
+      end if
+      end subroutine
+#endif
 !-----------------------------------------------------------------------
       subroutine rdimf(istep)
       use nchist_module,only: handle_ncerr

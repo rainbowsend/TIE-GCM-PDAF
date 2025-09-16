@@ -1,4 +1,12 @@
       subroutine inp_read
+! -----------------------------------------------------------------------------
+! This file was modified for the integration of the Parallel Data Assimilation
+! Framework (PDAF)
+! Armin Corbin, University of Bonn, Institute for Geodesy and Geoinformation
+!
+! 06 NOV 2019: replaced MPI_COMM_WORLD with COMM_model
+! 19 NOV 2021: use Fortran 2008 MPI interface
+! -----------------------------------------------------------------------------
 !
 ! Namelist read. 
 !
@@ -12,7 +20,8 @@
 !   circular dependencies.
 !
       use input_module,only: tgcm_input
-      use mpi
+      use mpi_f08
+      use mpi_module, only: COMM_model
       implicit none
       character(len=1024) :: inputfile,line
       integer :: ier,stat
@@ -21,7 +30,7 @@
       call getarg(1,inputfile)
       write(6,"(/,'Reading namelist input data from ',a)") 
      |  trim(inputfile)
-      call mpi_bcast(inputfile,1024,MPI_CHARACTER,0,MPI_COMM_WORLD,ier)
+      call mpi_bcast(inputfile,1024,MPI_CHARACTER,0,COMM_model,ier)
       open(10,file=trim(inputfile)) 
 !
 ! Do the namelist read:

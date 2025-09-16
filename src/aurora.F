@@ -55,6 +55,23 @@
 !             and mods to gpi.F. 
 ! 1/24/08 btf:Changed alfad,ed, alfac,ec as per Wenbin.
 !
+! -----------------------------------------------------------------------------
+! This file was modified for the integration of the Parallel Data Assimilation
+! Framework (PDAF)
+! Armin Corbin, University of Bonn, Institute for Geodesy and Geoinformation
+!
+! 31 AUG 2021: alfad and alfac are protected insted of parameter.
+!              addes subroutine to change the values of alfad and alfac. This
+!              enables us to disturbe them for the ensemble generation.
+! 22 JUN 2023: When compiling with PDAF the extrapolation of lower and upper
+!              boundaries of  qo2p, qop, qn2p, qnp, and qtef is only performed,
+!              if added value is not negative. Else the previous value is kept
+!              This is necessary since negative production rates cause numeric
+!              errors in lambdas.F (sqrt(lamda1tmp(k,i)*lamda1tmp(k+1,i)))
+!              Negativ values are propagated:
+!                  qn2p -> d -> nop -> sigma_ped -> lamda1tmp
+!                  |   elden.F      |        lambdas.F      |
+! -----------------------------------------------------------------------------
       use cons_module,only: ! see cons.F
      |  dphi, ! delta latitude geographic (radians)
      |  dtr,  ! degrees to radians (pi/180)
@@ -84,13 +101,15 @@
       integer :: ihem      ! hemisphere at current latitude (1=SH,2=NH)
       integer,parameter :: isouth=1, inorth=2
 !
+!
 ! Polar drizzle parameters:
 !   alfad: Characteristic Maxwellian energy of drizzle electrons (keV)
 !   ed   : Column energy input of drizzle electrons (ergs/cm**2/s)
 !   fd   : Electron particle flux of drizzle electrons (particles/cm**2/s)
 ! 1/24/08 btf: reduce alfad to 0.5, as per Wenbin:
 !
-      real,parameter :: alfad = 0.5
+      real, parameter :: alfad_0 = 0.5 ! 500 eV
+      real, protected :: alfad = alfad_0 ! 500 eV
       real :: ed ! set in sub aurora_cons as function of hem power
       real :: fd ! set in sub aurora_ions
 !
@@ -103,7 +122,8 @@
 !              and ec is set as function of hemispheric power in aurora_cons 
 !              (old tiegcm1.8 value for ec was 0.5)
 !
-      real,parameter :: alfac = 0.1
+      real, parameter :: alfac_0 = 0.1 ! 100 eV
+      real, protected :: alfac = alfac_0 ! 100 eV
       real :: ec ! set in sub aurora_cons (function of hem power)
 !
       real :: fc ! set in sub aurora_ions
@@ -469,9 +489,9 @@
 ! Report to stdout:
       if (iprint > 0) then
         write(6,"(/,'aurora_cons:')")
-        write(6,"('  cusp:    alfac=',f8.3,' ec=',f8.3,' fc=',e12.4)")
+        write(6,"('  cusp:    alfac=',f9.4,' ec=',f8.3,' fc=',e12.4)")
      |    alfac,ec,fc
-        write(6,"('  drizzle: alfad=',f8.3,' ed=',f8.3,' fd=',e12.4)")
+        write(6,"('  drizzle: alfad=',f9.4,' ed=',f8.3,' fd=',e12.4)")
      |    alfad,ed,fd
 	write(6,"('  auroral radius = max of rhp,rcp=',2f10.3)") rhp,rcp
 	write(6,"('  roth, rote (MLT) =',2f10.3)") roth,rote
@@ -834,6 +854,32 @@
 #endif
 
       end subroutine aurora_heat
+#ifdef USE_PDAF
+      subroutine set_alfad(new_alfad)
+        implicit none
+        real, intent(in) :: new_alfad
+        alfad = new_alfad
+      end subroutine
+
+      subroutine set_alfac(new_alfac)
+        implicit none
+        real, intent(in) :: new_alfac
+        alfac = new_alfac
+      end subroutine
+
+      subroutine apply_perturbation_to_aurora_constants
+        use model_parameter_handling_module, only: param_alfac,
+     |                                             param_alfad,
+     |                                            PARAM_HANDLING_PERTURB
+        implicit none
+
+        if(param_alfac%handling==PARAM_HANDLING_PERTURB) alfac = alfac_0
+        if(param_alfad%handling==PARAM_HANDLING_PERTURB) alfad = alfad_0
+
+        call param_alfac%handle(alfac)
+        call param_alfad%handle(alfad)
+      end subroutine apply_perturbation_to_aurora_constants
+#endif
       end module aurora_module
 !-----------------------------------------------------------------------
 ! 11/08 EMERY added eflux=flux*fac_p2e*alfa (better when alfa quite variable)
@@ -1080,7 +1126,7 @@
 !
 ! Extrapolate lower boundary:
 ! TIEGCM-1.9x bug fix from Wenbin's old LTR/CMIT-2.5 code
-#if defined(INTERCOMM) || defined(CISMAH)
+#if defined(INTERCOMM) || defined(CISMAH) || defined(USE_PDAF)
         if(1.5*qo2p_aur(lev0,i) > 0.5*qo2p_aur(lev0+1,i))then
          qo2p(lev0,i,lat) = qo2p(lev0,i,lat)+1.5*qo2p_aur(lev0,i)-
      |     0.5*qo2p_aur(lev0+1,i)
@@ -1103,18 +1149,36 @@
         endif
 #else
         qo2p(lev0,i,lat) = qo2p(lev0,i,lat)+1.5*qo2p_aur(lev0,i)-
-     |    0.5*qo2p_aur(lev0+1,i)        
+     |    0.5*qo2p_aur(lev0+1,i)
         qop (lev0,i,lat) = qop (lev0,i,lat)+1.5*qop_aur (lev0,i)-
-     |    0.5*qop_aur (lev0+1,i)        
+     |    0.5*qop_aur (lev0+1,i)
         qn2p(lev0,i,lat) = qn2p(lev0,i,lat)+1.5*qn2p_aur(lev0,i)-
-     |    0.5*qn2p_aur(lev0+1,i)        
-        qnp (lev0,i,lat) = qnp (lev0,i,lat)+ .22/.7 * 
+     |    0.5*qn2p_aur(lev0+1,i)
+        qnp (lev0,i,lat) = qnp (lev0,i,lat)+ .22/.7 *
      |    (1.5*qn2p_aur(lev0,i)-0.5*qn2p_aur(lev0+1,i))
         qtef(lev0,i,lat) = qtef(lev0,i,lat)+1.57*(1.5*qn2p_aur(lev0,i)-
-     |    0.5*qn2p_aur(lev0+1,i))        
+     |    0.5*qn2p_aur(lev0+1,i))
 #endif
 !
 ! Extrapolate upper boundary:
+#if defined(USE_PDAF)
+        if(1.5*qo2p_aur(lev1-1,i) > 0.5*qo2p_aur(lev1-2,i)) then
+        qo2p(lev1,i,lat)= qo2p(lev1,i,lat)+1.5*qo2p_aur(lev1-1,i)-
+     |    0.5*qo2p_aur(lev1-2,i)
+        end if
+        if(1.5*qop_aur(lev1-1,i) > 0.5*qop_aur(lev1-2,i)) then
+        qop (lev1,i,lat)= qop (lev1,i,lat)+1.5*qop_aur (lev1-1,i)-
+     |    0.5*qop_aur (lev1-2,i)
+        end if
+        if(1.5*qn2p_aur(lev1-1,i) > 0.5*qn2p_aur(lev1-2,i)) then
+        qn2p(lev1,i,lat)= qn2p(lev1,i,lat)+1.5*qn2p_aur(lev1-1,i)-
+     |    0.5*qn2p_aur(lev1-2,i)
+        qnp (lev1,i,lat)= qnp (lev1,i,lat)+ .22/.7 *
+     |    (1.5*qn2p_aur(lev1-1,i)-0.5*qn2p_aur(lev1-2,i))
+        qtef(lev1,i,lat) = qtef(lev1,i,lat)+1.57*
+     |    (1.5*qn2p_aur(lev1-1,i)-0.5*qn2p_aur(lev1-2,i))
+        end if
+#else
         qo2p(lev1,i,lat)= qo2p(lev1,i,lat)+1.5*qo2p_aur(lev1-1,i)-
      |    0.5*qo2p_aur(lev1-2,i)
         qop (lev1,i,lat)= qop (lev1,i,lat)+1.5*qop_aur (lev1-1,i)-
@@ -1125,6 +1189,7 @@
      |    (1.5*qn2p_aur(lev1-1,i)-0.5*qn2p_aur(lev1-2,i))
         qtef(lev1,i,lat) = qtef(lev1,i,lat)+1.57*
      |    (1.5*qn2p_aur(lev1-1,i)-0.5*qn2p_aur(lev1-2,i))
+#endif
       enddo ! i=lon0,lon1
 
 !     call addfld('QO2P',' ',' ',qo2p(lev0:lev1,lon0:lon1,lat),
@@ -1257,4 +1322,3 @@
         enddo
       enddo
       end subroutine cion
-

@@ -5,6 +5,13 @@
 ! Open Source Academic Research License Agreement contained in the file 
 ! tiegcmlicense.txt.
 !
+! -----------------------------------------------------------------------------
+! This file was modified for the integration of the Parallel Data Assimilation
+! Framework (PDAF)
+! Armin Corbin, University of Bonn, Institute for Geodesy and Geoinformation
+!
+! 22 APR 2020: added sub solor point to history structure
+! -----------------------------------------------------------------------------
       use nchist_module,only: ! nchist_mod.F
      |  nc_open,     ! subroutine to open a netcdf file
      |  nc_define,   ! subroutine to define vars in a new netcdf file
@@ -350,6 +357,7 @@
       use cons_module,only: p0,grav
       use aurora_module,only: e1,e2,h1,h2,alfac,ec,alfad,ed
       use gpi_module,only: kp_gpi=>fkp
+      use magfield_module, only: sbsllat, sbsllon
       implicit none
 !
 ! Args:
@@ -454,6 +462,7 @@
       else
         h%f107d     = f107
         h%f107a     = f107a
+        h%subsolarpoint = (/sbsllon, sbsllat/)
         h%hpower    = power
         h%ctpoten   = ctpoten
 !

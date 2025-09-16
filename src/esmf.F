@@ -4,6 +4,16 @@
 ! Open Source Academic Research License Agreement contained in the file 
 ! tiegcmlicense.txt.
 !
+! -----------------------------------------------------------------------------
+! This file was modified for the integration of the Parallel Data Assimilation
+! Framework (PDAF)
+! Armin Corbin, University of Bonn, Institute for Geodesy and Geoinformation
+!
+! 06 NOV 2019: replaced MPI_COMM_WORLD with COMM_model
+! 19 NOV 2021: use Fortran 2008 MPI interface
+! 09 JUL 2024: use contiguous for pointer in esmf_get routines
+! -----------------------------------------------------------------------------
+!
 ! This module contains calls to ESMF (Earth System Modeling Framework)
 ! to perform mag2geo and geo2mag regridding in an MPI environment for 
 ! the parallel dynamo code (pdynamo.F).
@@ -54,6 +64,10 @@
 !-----------------------------------------------------------------------
       subroutine esmf_init
       use cons_module,only: rtd
+      use mpi_module, only: COMM_model
+#ifdef USE_PDAF
+      use mod_parallel_pdaf, only: task_id
+#endif
 !
 ! Called once per run at model initialization.
 ! Create ESMF grids for geographic and magnetic, and create ESMF fields
@@ -63,6 +77,9 @@
       integer :: rc,istat
       integer(ESMF_KIND_I4),pointer :: factorIndexList(:,:) ! esmf (2,nw)
       real(ESMF_KIND_R8),pointer :: factorList(:)           ! esmf weights (nw)
+      character(len=64) :: logName
+      
+      type(ESMF_VM) :: vm
 !
 ! Global geo indices for geo2mag with all 4 corners. nlat+2 includes poles
 ! (Used for diagnostics only)
@@ -84,7 +101,19 @@
       integer :: lbnd_srcmag(3),ubnd_srcmag(3)   ! 3d bounds of source mag grid
 !
 ! Open esmf:
-      call ESMF_Initialize(logkindflag=ESMF_LOGKIND_MULTI,rc=rc)
+#ifdef USE_PDAF
+      write(logName,'(a,i0.4,a)') "esmfError_instance_", 
+     | task_id,'.log'
+#else
+      write(logName,'(a)') "esmfError_instance.log"
+#endif
+! Multiple concurrent instances of ESMF under separate MPI communicators 
+! https://earthsystemmodeling.org/docs/release/ESMF_8_0_1/ESMF_refdoc/node6.html#vm_multi_instance_esmf
+      call ESMF_Initialize(vm=vm,
+     |           logkindflag=ESMF_LOGKIND_MULTI_ON_ERROR,
+     |           mpiCommunicator=COMM_model%MPI_VAL,
+     |           defaultlogfilename=trim(logName),rc=rc)
+
 !
 ! Make magnetic and geographic grids for geo2mag regridding:
       call create_geo_grid(geo_src_grid,'src')  ! geo source grid
@@ -92,7 +121,7 @@
 !
 ! Make grids for mag2geo regridding:
       call create_mag_grid(mag_src_grid,'src')  ! mag source grid
-      call create_geo_grid(geo_des_grid,'des')  ! geo destination grid
+      call create_geo_grid(geo_des_grid,'des')  ! geo destination grid      
 !
 ! Create empty fields on geographic grid that will be transformed to
 !   the magnetic grid and passed as input to the dynamo. This does not
@@ -473,7 +502,7 @@
      |  lbnd(1),ubnd(1)
       real(ESMF_KIND_R8),pointer :: coordX(:),coordY(:)
       integer,allocatable :: nlons_task(:) ! dim ntaski
-      integer,allocatable :: nlats_task(:) ! dim ntaskj
+      integer,allocatable :: nlats_task(:) ! dim ntaskj     
 !
 ! We are creating either a source grid or a destination grid:
       if (srcdes /= 'src' .and. srcdes /= 'des') then
@@ -533,6 +562,7 @@
           endif
         enddo
       endif
+!        
 !
 ! Create 2d geographic grid:
 ! (minimum global lat index is 0, to include the poles)
@@ -549,23 +579,22 @@
      |    indexflag=ESMF_INDEX_GLOBAL,
      |    minIndex=(/1,0/),rc=rc)
       endif
-
-      if (rc /=ESMF_SUCCESS) then
-        write(6,"(/,'>>> create_geo_grid: error return from ',
-     |    'ESMF_GridCreate1PeriDim: rc=',i4)") rc
-        call shutdown('create_geo_grid')
-      endif
+      
+      if(ESMF_LogFoundError(rc,msg="TIEGCM ESMF_GridCreate1PeriDim",
+     |  rcToReturn=rc)) then
+        call shutdown('ESMF error in: create_geo_grid')
+      end if
 !
 ! Allocate coordinates:
 !
       call ESMF_GridAddCoord(grid_out,
      |  staggerloc=ESMF_STAGGERLOC_CENTER,rc=rc)
 
-      if (rc /=ESMF_SUCCESS) then
-        write(6,"(/,'>>> create_geo_grid: error return from ',
-     |    'ESMF_GridAddCoord')")
-        call shutdown('create_geo_grid')
-      endif
+      if(ESMF_LogFoundError(rc,msg="TIEGCM ESMF_GridAddCoord",
+     |  rcToReturn=rc)) then
+        call shutdown('ESMF error in: create_geo_grid')
+      end if
+      
 !
 ! Get pointer and set geo grid longitude coordinates:
 !
@@ -573,12 +602,11 @@
      |  computationalLBound=lbnd, computationalUBound=ubnd,
      |  farrayPtr=coordX, staggerloc=ESMF_STAGGERLOC_CENTER, rc=rc)
 
-      if (rc /=ESMF_SUCCESS) then
-        write(6,"(/,'>>> create_geo_grid: error return from ',
-     |    'ESMF_GridGetCoord for longitude coords')")
-        call shutdown('create_geo_grid')
-      endif
-
+      if(ESMF_LogFoundError(rc,msg="TIEGCM ESMF_GridGetCoord lon",
+     |  rcToReturn=rc)) then
+        call shutdown('ESMF error in: create_geo_grid')
+      end if
+     
       lbnd_lon = lbnd(1) ; ubnd_lon = ubnd(1)
       if (srcdes == 'src') then ! source grid excludes periodic points
         do i=lbnd_lon,ubnd_lon
@@ -972,7 +1000,7 @@
 !
 ! Args:
       type(ESMF_field),intent(in) :: field
-      real,pointer,dimension(:,:,:),intent(out) :: fptr
+      real,pointer,dimension(:,:,:), CONTIGUOUS, intent(out) :: fptr
       character(len=*),intent(in) :: name
 !
 ! Local:
@@ -985,6 +1013,10 @@
         write(errmsg,"('esmf_get_field 3d field ',a)") trim(name)
         call shutdown(errmsg)
       endif
+
+!       if(any(isnan(fptr)))then
+!         write(*,*) "error ", trim(name), " contains nan"
+!       end if
 
 !     if (name=='PHIG3D  ') then
 !       write(6,"('esmf_get_3dfield: ',a,' lbnd=',3i4,' ubnd=',3i4,
@@ -999,7 +1031,7 @@
 !
 ! Args:
       type(ESMF_field),intent(in) :: field
-      real,pointer,dimension(:,:),intent(out) :: fptr
+      real,pointer,dimension(:,:), CONTIGUOUS, intent(out) :: fptr
       character(len=*),intent(in) :: name
 !
 ! Local:

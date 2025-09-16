@@ -4,7 +4,16 @@
 ! This software is part of the NCAR TIE-GCM.  Use is governed by the 
 ! Open Source Academic Research License Agreement contained in the file 
 ! tiegcmlicense.txt.
-!      
+!
+! -----------------------------------------------------------------------------
+! This file was modified for the integration of the Parallel Data Assimilation
+! Framework (PDAF)
+! Armin Corbin, University of Bonn, Institute for Geodesy and Geoinformation
+!
+! 07 JUL 2023: allocate 't','u','v','z' and 'tmp' array
+!              to fix  'moved from stack to static storage'
+! -----------------------------------------------------------------------------
+!
 ! Read CTMT boundary perturbations Z, T, U, V, and interpolate
 !   to model time. (not divided by diurnal/semidiurnal/mig/nonmig)
 !
@@ -85,8 +94,14 @@
       integer :: id_nmonth, id_nhour, id_nlon, id_nlat
       integer :: idv_z, idv_t, idv_u, idv_v
       character(len=240) :: char240
-      real,dimension(nlonp4,nlat,nmonth,nhour) :: t,u,v,z
-      real,dimension(nlon,nlat,nmonth,nhour) :: tmp
+      real,dimension(:,:,:,:), allocatable :: t,u,v,z
+      real,dimension(:,:,:,:), allocatable :: tmp
+
+      allocate(t(nlonp4,nlat,nmonth,nhour))
+      allocate(u(nlonp4,nlat,nmonth,nhour))
+      allocate(v(nlonp4,nlat,nmonth,nhour))
+      allocate(z(nlonp4,nlat,nmonth,nhour))
+      allocate(tmp(nlon,nlat,nmonth,nhour))
 !
       dskfile = ' '
       call getfile(ncfile,dskfile)
@@ -226,6 +241,13 @@
       call nc_close(ncid)
       write(6,"('Completed read from CTMT data file ',a)") trim(ncfile)
       write(6,"(/,72('-'))")
+
+      deallocate(t)
+      deallocate(u)
+      deallocate(v)
+      deallocate(z)
+      deallocate(tmp)
+
       end subroutine rd_ctmt
 !-----------------------------------------------------------------------
       subroutine mk_ctmt(iyear,iday,isecs,iprint)

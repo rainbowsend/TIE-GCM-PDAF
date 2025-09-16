@@ -10,7 +10,15 @@
 ! Advance neutral temperature at current latitude: 
 ! 4/4/05 btf: added gswm lbc option (eliminated dt_gswm.F)
 !
-      use params_module,only: nlonp4,dz,nlat,spval
+! -----------------------------------------------------------------------------
+! This file was modified for the integration of the Parallel Data Assimilation
+! Framework (PDAF)
+! Armin Corbin, University of Bonn, Institute for Geodesy and Geoinformation
+!
+! 15 JAN 2021: corrected error in computation of upper layer of rho
+! 15 SEP 2025: use input barm and not mbar igonoring Helium.
+! -----------------------------------------------------------------------------
+      use params_module,only: nlonp4,dz,nlat,spval,dlev
       use input_module,only: step
       use init_module,only: iter,igetgswm,iday
       use cons_module,only: freq_semidi,tbound,shapiro,dtx2inv,expz,
@@ -22,6 +30,8 @@
       use fields_module,only: tlbc,ulbc,vlbc,tlbc_nm
       use addfld_module
       use diags_module,only: mkdiag_DEN,mkdiag_HEAT
+c       use nc_debug, only: instant_write
+c       use fields_module, only : levd0,levd1,lond0,lond1,latd0,latd1
 #ifdef MPI
       use mpi_module,only: mp_bndlons_f3d, mp_periodic_f3d
 #endif
@@ -44,7 +54,7 @@
      |  kt,    ! molecular diffusion (ergs/cm/deg/sec) (sub cpktkm)
      |  km,    ! molecular viscosity (gm/cm/sec)       (sub cpktkm)
      |  hdt,   ! horizontal diffusion of tn (from sub hdif3, hdif.F)
-     |  qji_tn,! joule heating for tn (from sub qjoule_tn, qjoule.F)
+     |  qji_tn,! joule heating for tn (from sub qjoule_tn, qjoule.F) (ergs/s/g -> 1E-4 W/kg)
      |  cool_imp, ! implicit cooling (newton.F)
      |  cool_exp, ! explicit cooling (newton.F)
      |  w_upd  ! updated vertical velocity (swdot.F)
@@ -136,8 +146,12 @@
 !
 ! 2/28/05 btf: Use k rather than k+1 in mbar calculation
 !              (as in recent versions of time-gcm, e.g., timegcm1.2)
-          mbar(k,i) = 1./(o2(k,i,lat)*rmassinv_o2 +
-     |      o1(k,i,lat)*rmassinv_o1 + n2(k,i,lat)*rmassinv_n2)
+!         mbar(k,i) = 1./(o2(k,i,lat)*rmassinv_o2 +
+!     |      o1(k,i,lat)*rmassinv_o1 + n2(k,i,lat)*rmassinv_n2)
+!
+! AC 15.09.2025
+! why is mbar recommputed here (it does not consider helium!) use input instead
+          mbar(k,i) = barm(k,i,lat)
         enddo ! k=lev0,lev1-1
       enddo ! i=lon0,lon1
 
@@ -209,7 +223,6 @@
           cptn(k,i) = cptn(k,i)-expz(k)*total_heat(k,i) ! s1
         enddo ! k=lev0,lev1-1
       enddo ! i=lon0,lon1
-
 !     call addfld('CPTN',' ',' ',cptn,
 !    |  'lev',lev0,lev1,'lon',lon0,lon1,lat)
 !     call addfld('QM'     ,' ',' ',qm(lev0:lev1-1,:),
@@ -238,7 +251,7 @@
         h(lev0,i) = gask*tni(lev0,i)/barm(lev0,i,lat)
         h(lev1,i) = gask*tni(lev1,i)/barm(lev1,i,lat)
         rho(lev0,i) = p0*expzmid_inv*expz(lev0)/h(lev0,i)
-        rho(lev1,i) = p0*expzmid_inv*expz(lev1-1)/h(lev1,i)
+        rho(lev1,i) = p0*expzmid_inv*expz(lev1-1)*exp(-dlev)/h(lev1,i)
         h(lev0,i) = h(lev0,i)/grav
         h(lev1,i) = h(lev1,i)/grav
 !
@@ -339,14 +352,27 @@
 !     subroutine trsolv(a,b,c,f,x,lev0,lev1,k1,k2,lon0,lon1,lonmax,lat,
 !    |  idebug)
 !
+
       call trsolv(p,q,r,rhs,tn_upd(:,lon0:lon1,lat),lev0,lev1,
      |  lev0,lev1-1,lon0,lon1,nlonp4,lat,0)
+
+c       call trsolv2(p,q,r,rhs,tn_upd(:,lon0:lon1,lat),lev0,lev1,
+c      |  lev0,lev1-1,lon0,lon1,nlonp4,lat,0)
 
 !     call addfld('TN_SOLV','Updated TN from trsolv','K',
 !    |  tn_upd(:,lon0:lon1,lat),'lev',lev0,lev1,'lon',lon0,lon1,lat)
 !
 ! End second latitude scan:
       enddo ! lat=lat0,lat1
+#ifdef USE_PDAF
+      ! 11 Sep 2025 AC upper limit
+      ! tn after trsolv might contain unrealisticly high values in rare occasions when performing da
+      ! the subsequent filter would propagate those artifacts over the longitude rings
+      ! TODO what is the actual reason?
+      where(tn_upd>2800)
+            tn_upd = 2800
+      end where
+#endif
 !
 ! Filter updated tn:
       call filter_tn(tn_upd,lev0,lev1,lon0,lon1,lat0,lat1,kut)

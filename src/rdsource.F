@@ -7,6 +7,13 @@
 !
 ! Read source history.
 !
+! -----------------------------------------------------------------------------
+! This file was modified for the integration of the Parallel Data Assimilation
+! Framework (PDAF)
+! Armin Corbin, University of Bonn, Institute for Geodesy and Geoinformation
+!
+! 07 OCT 2022: doubled character len of diskfile in rdsource(...)
+! -----------------------------------------------------------------------------
       use params_module,only: nlon,nlonp2,nlonp4,nlevp1,nlat
       use input_module,only: source,source_start,output,start,
      |  f107,f107a,power,noutput
@@ -205,7 +212,7 @@
      |  j,               ! latitude loop index
      |  ier              ! error flag
       real :: dum,rj
-      character(len=120) :: diskfile
+      character(len=256) :: diskfile
 !
 ! Acquire source file:
       diskfile = ' '

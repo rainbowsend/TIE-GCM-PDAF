@@ -5,6 +5,13 @@
 ! Open Source Academic Research License Agreement contained in the file 
 ! tiegcmlicense.txt.
 !
+! -----------------------------------------------------------------------------
+! This file was modified for the integration of the Parallel Data Assimilation
+! Framework (PDAF)
+! Armin Corbin, University of Bonn, Institute for Geodesy and Geoinformation
+!
+! 23 JUN 2023: check if densities o2i o1i are negative
+! -----------------------------------------------------------------------------
       use params_module,only: nlevp1,nlonp4
       use addfld_module,only: addfld
       implicit none
@@ -183,6 +190,15 @@
         o1i(1,i) = .5*(b(i,2,1)*o2(1,i)+(b(i,2,2)+1.)*o1(1,i)+
      |    fb(i,2))
         n4si(1,i) = 0.
+! 23.7.23 AC prevent negative o2i and o1i
+      if (o2i(1,i) < 0) then
+        write(*,*) 'WARNING o2i(1',i,') is negative.'
+        o2i(1,i) = 1E-12
+      end if
+      if (o1i(1,i) < 0) then
+        write(*,*) 'WARNING o1i(1',i,') is negative.'
+        o1i(1,i) = 1E-12
+      end if
 !
 ! btf tiegcm_he 8/21/13: Not sure about n2i bottom boundary. 
 ! For now, use 1-o2i-o1i since helium is negligible at this height.

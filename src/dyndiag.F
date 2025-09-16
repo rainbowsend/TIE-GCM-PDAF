@@ -1,3 +1,10 @@
+! -----------------------------------------------------------------------------
+! This file was modified for the integration of the Parallel Data Assimilation
+! Framework (PDAF)
+! Armin Corbin, University of Bonn, Institute for Geodesy and Geoinformation
+!
+! 06 NOV 2019: replaced MPI_COMM_WORLD with COMM_model
+! -----------------------------------------------------------------------------
 #include "defs.h"
       module dyndiag_module
       use params_module,only: nlonp1,nlonp4,nlat,nlevp1,nlatp1
@@ -244,7 +251,7 @@ C Calculate the mechanical work done by wind
 #ifdef MPI
       subroutine mp_dyndiag_gather
       use mpi_module,only: mytid,lon0,lon1,lat0,lat1,mxlat,mxlon,
-     |  ntask,tasks,handle_mpi_err,mpi_real8,mpi_comm_world
+     |  ntask,tasks,handle_mpi_err,mpi_real8,COMM_model
 !
 ! Local:
       integer,parameter :: nfld=12
@@ -325,7 +332,7 @@ C Calculate the mechanical work done by wind
 !
 ! Gather to root:
       call mpi_gather(sndbuf,len,MPI_REAL8,rcvbuf,len,MPI_REAL8,0,
-     |  MPI_COMM_WORLD,ier)
+     |  COMM_model,ier)
       if (ier /= 0)
      |  call handle_mpi_err(ier,'mp_dynamo_gather: mpi_gather to root')
 !

@@ -5,6 +5,15 @@
 ! Open Source Academic Research License Agreement contained in the file 
 ! tiegcmlicense.txt.
 !
+! -----------------------------------------------------------------------------
+! This file was modified for the integration of the Parallel Data Assimilation
+! Framework (PDAF)
+! Armin Corbin, University of Bonn, Institute for Geodesy and Geoinformation
+!
+! 21 JUN 2022: put hard coded constants used in the computation of
+!              beta 1,3,5,8 and 9 to module variables. This allows the
+!              calibration of the corresponding reaction rates.
+! -----------------------------------------------------------------------------
       use params_module,only: nlevp1,nlonp4
 !
 ! Chemical reaction rates.
@@ -41,13 +50,21 @@
      |  rk23  = 8.E-10,   ! O+(2D)      -> N2+O     + 1.33 eV
      |  rk24  = 5.0E-12,  ! O+(2D) + O  -> O+(4S) +e+ 3.31 eV
      |  rk26  = 7.E-10,   ! O+(2D) + O2 -> O2+O     + 4.865 eV
-     |  rk27  = 7.7E-5,
+     |  rk27  = 7.7E-5
 !
 ! Neutral chemistry:
+      real ::
      |  beta2 = 5.0E-12,  ! N2D + O2 -> NO  + O1D + 1.84 eV
      |  beta4 = 7.0E-13,  ! N2D + O  -> N4S + O   + 2.38 eV
      |  beta6 = 7.0E-11,  ! N2D + NO -> N2  + O   + 5.63 eV
      |  beta7 = 1.06E-5   ! N2D      -> N4S + hv
+
+      real ::
+     |  beta1_0 = 1.5E-11, ! N4S + O2 -> NO  + O + 1.4  eV
+     |  beta3_0 = 3.4e-11, ! N4S + NO -> N2  + O + 3.25 eV
+     |  beta5_0 = 3.6E-10, ! N2D + e  -> N4S + e + 2.38 eV
+     |  beta8_0 = 4.5E-6,  ! NO  + hv -> N4S + O
+     |  beta9_0 = 2.91E11  ! NO  + hv/Ly-a -> NO+ + e
 !
 ! Temperature dependent chemical reaction rate coefficients. 
 ! These are set by rates_tdep for every latitude at every timestep. 
@@ -251,29 +268,29 @@
           ra3(k,i,lat)=1.8E-7*(300./te(k,i))**0.39
 !
 ! beta1: N4S + O2 -> NO  + O + 1.4  eV
-          beta1(k,i,lat) = 1.5E-11*exp(-3600./tn(k,i))
+          beta1(k,i,lat) = beta1_0*exp(-3600./tn(k,i))
 !
 ! beta3: N4S + NO -> N2  + O + 3.25 eV
-          beta3(k,i,lat) =3.4e-11*sqrt(tn(k,i)/300.)
+          beta3(k,i,lat) = beta3_0*sqrt(tn(k,i)/300.)
 !
 ! beta5: N2D + e  -> N4S + e + 2.38 eV
-          beta5(k,i,lat) = 3.6E-10*sqrt(te(k,i)/300.)
+          beta5(k,i,lat) = beta5_0*sqrt(te(k,i)/300.)
 !
 ! beta8: NO  + hv -> N4S + O
           if (.not.check_exp) then
-            beta8(k,i,lat) = 4.5E-6*(1.+0.11*(f107-65.)/165.)*
+            beta8(k,i,lat) = beta8_0*(1.+0.11*(f107-65.)/165.)*
      |        exp(-1.E-8*fno2(k,i)**0.38)*sfeps
           else
-            beta8(k,i,lat) = 4.5E-6*(1.+0.11*(f107-65.)/165.)*
+            beta8(k,i,lat) = beta8_0*(1.+0.11*(f107-65.)/165.)*
      |        expo(-1.E-8*fno2(k,i)**0.38,0)*sfeps
           endif
 !
 ! beta9: NO  + hv/Ly-a -> NO+ + e
           if (.not.check_exp) then
-            beta9(k,i,lat)=2.91E11*(1.+0.2*(f107-65.)/100.)*2.E-18*
+            beta9(k,i,lat)=beta9_0*(1.+0.2*(f107-65.)/100.)*2.E-18*
      |        exp(-8.E-21*fno2(k,i))*sfeps
           else
-            beta9(k,i,lat)=2.91E11*(1.+0.2*(f107-65.)/100.)*2.E-18*
+            beta9(k,i,lat)=beta9_0*(1.+0.2*(f107-65.)/100.)*2.E-18*
      |        expo(-8.E-21*fno2(k,i),0)*sfeps
           endif
           beta9n(k,i,lat)=5.E9*(1.+0.2*(f107-65.)/100.)*2.E-18*
@@ -288,9 +305,9 @@
 !       write(6,"('chemrates: i=',i3,' lon0,1=',2i3,' f107=',e12.4,
 !    |    ' fno2(lev1,i)=',e12.4)") i,lon0,lon1,f107,fno2(lev1,i)
 
-        beta8(lev1,i,lat)=4.5E-6*(1.+0.11*(f107-65.)/165.)*
+        beta8(lev1,i,lat)=beta8_0*(1.+0.11*(f107-65.)/165.)*
      |    exp(-1.E-8*fno2(lev1,i)**0.38)
-        beta9(lev1,i,lat)=2.91E11*(1.+0.2*(f107-65.)/100.)*2.E-18*
+        beta9(lev1,i,lat)=beta9_0*(1.+0.2*(f107-65.)/100.)*2.E-18*
      |    exp(-8.E-21*fno2(lev1,i))
         beta9n(lev1,i,lat)=5.E9*(1.+0.2*(f107-65.)/100.)*2.E-18*
      |    exp(-8.E-21*fnvo2(lev1,i))

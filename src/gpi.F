@@ -6,6 +6,19 @@
 ! Open Source Academic Research License Agreement contained in the file 
 ! tiegcmlicense.txt.
 !
+! -----------------------------------------------------------------------------
+! This file was modified for the integration of the Parallel Data Assimilation
+! Framework (PDAF)
+! Armin Corbin, University of Bonn, Institute for Geodesy and Geoinformation
+!
+!   28 OCT 2019: dynamic allocation of gpi fields
+!   29 OCT 2019: kp ncvars are read from namelist. It is possible to use
+!                hp30, hp60 and hp90 instead of kp
+!   20 MAR 2020: enabled perturbation of f107
+!   13 JAN 2021: enabled perturbation of ctpoten and hemispheric power
+!   07 JUL 2023: commented routines that are not called by model
+! -----------------------------------------------------------------------------
+!
 ! Module to use NGDC data for geophysical indices f107, f107a, 
 !   power, and/or ctpoten. These 4 variables are optionally provided
 !   by the user at input. Any of these that are NOT provided by
@@ -42,21 +55,33 @@
 #endif
 ! 
 ! Global gpi data read from gpi data file:
-      integer,parameter :: 
-     |  mxgpidays = 50000     ! maximum number of days of gpi data
       integer :: 
      |  ngpidays,             ! number of days of gpi data
-     |  gpi_iyd(mxgpidays),   ! yearday (7-digit) of gpi data
+     |  ngpikp,               ! number of kp intervals per day of gpi data
      |  iyd_beg,iyd_end       ! beginning and ending year-dates on gpi 
                               ! data file
-      real ::
-     |  gpi_f107d(mxgpidays), ! daily 10.7 cm flux
-     |  gpi_f107a(mxgpidays), ! 81-day average 10.7 cm flux
-     |  gpi_kp(8,mxgpidays)   ! 3-hourly kp
 
-      real :: fkp ! kp from gpi file, interpolated to model time
+      integer, dimension(:), allocatable ::
+     |  gpi_iyd               ! yearday (7-digit) of gpi data
+
+      real, dimension(:), allocatable ::
+     |  gpi_f107d,            ! daily 10.7 cm flux
+     |  gpi_f107a             ! 81-day average 10.7 cm flux
+     
+      real, dimension(:,:), allocatable ::
+     |  gpi_kp                ! kp index or kp-like index e.g. HP-index
+
+      real :: fkp             ! kp from gpi file, interpolated to model time
 !
-      contains 
+      contains
+!-----------------------------------------------------------------------
+      subroutine deallocate_gpi_module
+        write(6,"('RDGPI: deallocate_gpi_module')")
+        if (allocated (gpi_kp)) deallocate (gpi_kp)
+        if (allocated (gpi_iyd)) deallocate (gpi_iyd)
+        if (allocated (gpi_f107d)) deallocate (gpi_f107d)
+        if (allocated (gpi_f107a)) deallocate (gpi_f107a)
+      end subroutine deallocate_gpi_module
 !-----------------------------------------------------------------------
       subroutine rdgpi
 !
@@ -64,8 +89,9 @@
 ! and kp. These data are obtained in ascii format from NGDC. See comments 
 ! below.  If mpi job, only the master task executes this routine.
 !
-      use input_module,only: gpi_ncfile,mxlen_filename
+      use input_module,only: gpi_ncfile,mxlen_filename,gpi_ncfile_kp_var
       use nchist_module,only: nc_open,nc_close,handle_ncerr
+      
 !
 ! Local:
       character(len=mxlen_filename) :: dskfile
@@ -92,17 +118,20 @@
       istat = nf_inq_dimlen(ncid,id_ndays,ngpidays)
       if (istat /= NF_NOERR) call handle_ncerr(istat,
      |  'rdgpi: Error getting ndays dimension')
-      if (ngpidays > mxgpidays) then
-        write(6,"(/,'>>> rdgpi: need to increase mxgpidays: ',
-     |    'mxgpidays=',i8,' ngpidays=',i8)") mxgpidays,ngpidays
-        call shutdown('rdgpi')
-      endif
+
 !
 ! Get kp dimension (nkp should be 8 for 3-hourly kp):
-      istat = nf_inq_dimid(ncid,'nkp',id_nkp)
-      istat = nf_inq_dimlen(ncid,id_nkp,nkp)
+
+      istat = nf_inq_dimid(ncid,'n'//trim(gpi_ncfile_kp_var),id_nkp)
+      istat = nf_inq_dimlen(ncid,id_nkp,ngpikp)
       if (istat /= NF_NOERR) call handle_ncerr(istat,
      |  'rdgpi: Error getting nkp dimension')
+
+     
+      allocate(gpi_iyd(ngpidays))
+      allocate(gpi_f107d(ngpidays))
+      allocate(gpi_f107a(ngpidays))
+     
 !
 ! Get gpi_iyd:
       istat = nf_inq_varid(ncid,'year_day',idv_iyd)
@@ -131,13 +160,20 @@
 !     write(6,"('rdgpi: f107a=',/(8f8.2))") (gpi_f107a(i),i=1,ngpidays)
 !
 ! Get kp:
-      istat = nf_inq_varid(ncid,'kp',idv_kp)
+      
+      allocate(gpi_kp(ngpikp,ngpidays))
+
+      istat = nf_inq_varid(ncid,gpi_ncfile_kp_var,idv_kp)
       if (istat /= NF_NOERR) call handle_ncerr(istat,
      |  'rdgpi: Error getting kp var id')
       istat = nf_get_var_double(ncid,idv_kp,gpi_kp)
       if (istat /= NF_NOERR) call handle_ncerr(istat,
      |  'rdgpi: Error getting variable kp')
 !     write(6,"('rdgpi: kp=',/(8f8.2))") (gpi_kp(:,i),i=1,ngpidays)
+
+!      write(6,"('size gpi_kp ',2i8)") size(gpi_kp,1), size(gpi_kp,2)
+      
+      
       if (any(gpi_kp < 0.)) then
         do i=1,ngpidays
           if (any(gpi_kp(:,i) < 0.)) then
@@ -147,6 +183,7 @@
           endif
         enddo
       endif
+      
 !
 ! Get beginning and ending integer dates:
 ! (these should be gpi_iyd(3) and gpi_iyd(ngpidays-2) respectively,
@@ -186,12 +223,13 @@
 ! Local:
       integer :: i,iyd_cur,iyd_prv,iyd_nxt,loc,ier,
      |  if107,if107a,ipower,ictpoten,isecmin,isecmax,isec0,isec1
-      real :: f107_cur, f107a_cur, fkp_cur(8),  ! at current day
-     |        f107_prv, f107a_prv, fkp_prv(8),  ! at previous day
-     |        f107_p2d, f107a_p2d, fkp_p2d(8),  ! at 2nd previous day
-     |        f107_nxt, f107a_nxt, fkp_nxt(8),  ! at next day
-     |        f107_n2d, f107a_n2d, fkp_n2d(8)   ! at 2nd next day
+      real :: f107_cur, f107a_cur, fkp_cur(ngpikp),  ! at current day
+     |        f107_prv, f107a_prv, fkp_prv(ngpikp),  ! at previous day
+     |        f107_p2d, f107a_p2d, fkp_p2d(ngpikp),  ! at 2nd previous day
+     |        f107_nxt, f107a_nxt, fkp_nxt(ngpikp),  ! at next day
+     |        f107_n2d, f107a_n2d, fkp_n2d(ngpikp)   ! at 2nd next day
       real :: fkp0,fkp1
+      real :: dtkp
       integer,parameter :: isecnoon = 12*60*60   ! secs at noon 
 ! 
 ! External:
@@ -295,6 +333,8 @@
 ! If ut < 12, then use previous two days and current day
 ! If ut > 12, then use next two days and current day
 !
+! TODO createGPI.py interpolates values to 0 UTC -> should be 12 UTC?
+!
 !     subroutine timeterp(d1,d2,d3,d4,ipos,isec_dat,isec_req,fout,
 !    |  iprnt,ier)
 !
@@ -332,12 +372,14 @@
 !    |      f10.3)") fkp
 !
 ! Otherwise (namelist Kp not provided), interpolate data to model time:
-        else 
-          isecmin = int(1.5*3600.)
-          isecmax = int(22.5*3600.)
+        else
+          dtkp = 24./float(ngpikp)
+          isecmin = int(dtkp/2.*3600.)
+          isecmax = int((24.-dtkp/2.)*3600.)
+        
           if (iutsec >= isecmin .and. iutsec <= isecmax) then ! current day
-            do i=1,7
-              isec0 = int((float(i-1)*3.+1.5)*3600.)
+            do i=1,ngpikp-1
+              isec0 = int((float(i-1)*dtkp+dtkp/2.)*3600.)
               isec1 = isec0 + isecmin*2
               if (iutsec >= isec0 .and. iutsec <= isec1) then
                 fkp0 = fkp_cur(i)
@@ -348,15 +390,18 @@
           elseif (iutsec < isecmin) then ! use previous day
             isec0 = -isecmin
             isec1 = isecmin
-            fkp0 = fkp_prv(8)
+            fkp0 = fkp_prv(ngpikp)
             fkp1 = fkp_cur(1)
           else                           ! use next day
             isec0 = isecmax
-            isec1 = isecmax+int(3.*3600.)
-            fkp0 = fkp_cur(8)
+            isec1 = isecmax+int(dtkp*3600.)
+            fkp0 = fkp_cur(ngpikp)
             fkp1 = fkp_nxt(1)
           endif
           fkp = finterp(fkp0,fkp1,isec0,isec1,iutsec)
+          !write(6,"('FKP INTER fkp',3f10.4,2i8)") fkp,fkp0,fkp1,isec0,isec1
+            
+          
 !
 ! Kp has been known to go < 0 due to interpolation.
 !
@@ -368,6 +413,7 @@
             fkp = 0.
           endif
         endif ! rd_kp == spval
+
 !
 ! Use empirical formulas to calculate ctpoten and hemispheric power 
 ! from kp (functions are in util.F):
@@ -375,6 +421,10 @@
         if (ipower > 0) power = hp_from_kp(fkp)
       endif ! doing power or ctpoten
 !
+#ifdef USE_PDAF
+! perturbe or overwrite gpi data
+      call perturbe_gpi
+#endif
       if (iprint > 0) then
         write(6,"('Obtained the following GPI at the requested ',
      |    'date and time:')")
@@ -386,6 +436,25 @@
       endif
       end subroutine getgpi
 !-----------------------------------------------------------------------
+#ifdef USE_PDAF
+      subroutine perturbe_gpi
+
+      use input_module,only: f107,f107a,power,ctpoten
+
+      use model_parameter_handling_module, only: param_f107,
+     |                                           param_ctpoten,
+     |                                           param_hspower
+
+      implicit none
+
+      call param_f107%handle(f107)
+      call param_f107%handle(f107a)
+
+      call param_ctpoten%handle(ctpoten)
+      call param_hspower%handle(power)
+      end subroutine
+#endif
+!-----------------------------------------------------------------------
       subroutine getdat(iyd,f107,f107a,rkp,loc)
 !
 ! Search for iyd (7-digit year-day) in gpi_iyr(ngpidays) (which was
@@ -395,7 +464,7 @@
 !
 ! Args:
       integer,intent(in) :: iyd
-      real,intent(out) :: f107,f107a,rkp(8)
+      real,intent(out) :: f107,f107a,rkp(ngpikp)
       integer,intent(out) :: loc
 !
 ! Local:
@@ -521,322 +590,324 @@ c
       im = nsec/60
       is = mod(nsec,60)
       end subroutine isec2hms
-!-----------------------------------------------------------------------
-! 
-! >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
-! >>>>>>>>>>>>>>>>>> Routines below are NOT called <<<<<<<<<<<<<<<<<<<<<
-! >>>>>>>>>>>>>>>>>>  They are informational only <<<<<<<<<<<<<<<<<<<<<<
-! >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
-!
-! The routines mkncgpi, wrncgpi, idate2iyd, and ichdate are NOT 
-! called by the model. They are provided here as a record of
-! how the data is obtained and how the netcdf file /TGCM/data/gpi.nc
-! is written. See /home/foster/tgcminp/nc_gpi.
-!
-!-----------------------------------------------------------------------
-      subroutine mkncgpi
-!
-! Read NGDC ascii gpi data, and write netcdf file for use by the model:
-!
-      integer luin,mxdays,iq,nbad,imo,ida
-      parameter(mxdays=10000)
-      character*120 flnmin
-      real f107d(mxdays),f107a(mxdays),rkp(8,mxdays)
-      integer ii,i,iyd(mxdays),iy2,kp(8),ndays
-      data luin/20/
-!
-! ngdc.1979-2000.dat is NGDC ascii yearly data files obtained
-! from the following URL, and catted together into a single file:
-! ftp://ftp.ngdc.noaa.gov/STP/GEOMAGNETIC_DATA/INDICES/KP_AP/
-!
-      flnmin = " "
-      flnmin = "ngdc.1979-2000.dat"
-      open(luin,file=trim(flnmin),status='OLD',err=900)
-      do i=1,mxdays
-        read(luin,"(3i2,6x,8i2,37x,f5.1,i1)",end=100) iy2,imo,ida,kp,
-     +    f107d(i),iq
-        iyd(i) = idate2iyd(imo,ida,iy2,i)
-        do ii=1,8
-          rkp(ii,i) = float(kp(ii)/10)+float(kp(ii)-kp(ii)/10*10)*.1
-        enddo
-        f107a(i) = 0.
-!       if (mod(i,10).eq.0) write(6,"('i=',i5,' iyd=',i8,' f107d=',
-!    +    f5.1,' rkp=',8f5.1)") i,iyd(i),f107d(i),(rkp(ii,i),ii=1,8)
-      enddo
-      write(6,"('>>> need to increase mxdays (did not reach eof',
-     +  ' with mxdays=',i5,') <<<')") mxdays
-      call shutdown('mxdays')
- 100  continue
-      ndays = i-1
-      write(6,"('Finished read: ndays=',i5)") ndays
-c
-c f107d == 0. if no observation was made (iq=3). Fill these in
-c by simple interpolation if possible:
-c
-      nbad = 0
-      do i=2,ndays-1
-        if (f107d(i).le.0.) then
-          if (f107d(i-1).le.0..or.f107d(i+1).le.0.)
-     +      write(6,"('>>> warning: 2 or more bad f107d at i=',
-     +        i5)") i
-          f107d(i) = .5*(f107d(i-1)+f107d(i+1))
-          nbad = nbad+1
-        endif
-      enddo
-      if (nbad.gt.0) write(6,"('>>> nbad f107d = ',i5)") nbad
-c
-c Find as many f107a (81-day ave) values as possible:
-c (leave rest zero)
-c
-      if (ndays.ge.81) then
-        do i=41,ndays
-          if (i+40.gt.ndays) then
-            ii = i-1
-            goto 101
-          endif
-          f107a(i) = 0.
-          do ii=i-40,i+40
-            f107a(i) = f107a(i) + f107d(ii)
-          enddo
-          f107a(i) = f107a(i)/81.
-        enddo
- 101    continue
-        write(6,"('Calculated 81-day ave f107a for days ',
-     +    '41 to ',i5)") ii
-!       write(6,"('f107a=',/(8f8.2))") (f107a(i),i=1,ndays)
-      endif
-!
-      close(luin)
-!
-! Write netcdf file:
-      call wrncgpi(iyd,f107d,f107a,rkp,ndays)
-!
-      write(6,"('done')")
-      call shutdown('done')
- 900  write(6,"('>>> Error opening input file ',a)") trim(flnmin)
-      call shutdown('flnmin')
-      end subroutine mkncgpi
-!-----------------------------------------------------------------------
-      subroutine wrncgpi(iyd,f107d,f107a,rkp,ndays)
-      use nchist_module,only: handle_ncerr
-!
-! Args:
-      integer,intent(in) :: ndays
-      real,intent(in) :: f107d(ndays),f107a(ndays),rkp(8,ndays)
-      integer,intent(in) :: iyd(ndays)
-!
-! Local:
-      integer :: istat,ncid,ids1(1),ivar1(1),ids2(2)
-      integer :: id_ndays,id_kp,idv_iyd,idv_f107d,idv_f107a,idv_kp
-      character(len=32) :: ncfile
-      character(len=80) :: char80
-      character(len=120) :: char120
-!
-! Open new netcdf dataset:
-      ncfile = " "
-      ncfile = "gpi.nc"
-      istat = nf_create(ncfile,NF_CLOBBER,ncid)
-      if (istat /= NF_NOERR) call handle_ncerr(istat,
-     |  'opening new netcdf dataset')
-!
-! Define ndays dimension:
-      istat = nf_def_dim(ncid,"ndays",ndays,id_ndays)
-      if (istat /= NF_NOERR) call handle_ncerr(istat,
-     +  'Error defining ndays dimension')
-!
-! Define kp dimension:
-      istat = nf_def_dim(ncid,"nkp",8,id_kp)
-      if (istat /= NF_NOERR) call handle_ncerr(istat,
-     +  'Error defining kp dimension')
-!
-! Define variables iyd, f107d, f107a, kp:
-!
-! iyd:
-      ids1(1) = id_ndays
-      istat = nf_def_var(ncid,"year_day",NF_INT,1,ids1,idv_iyd)
-      if (istat /= NF_NOERR) call handle_ncerr(istat,
-     |  'Error defining variable yearday')
-      write(char80,"('4-digit year followed by 3-digit day')")
-      istat = nf_put_att_text(ncid,idv_iyd,"long_name",
-     |  len_trim(char80),trim(char80))
-      if (istat /= NF_NOERR) call handle_ncerr(istat,
-     |  'Error defining long_name of variable year_day')
-! f107d:
-      istat = nf_def_var(ncid,"f107d",NF_DOUBLE,1,ids1,idv_f107d)
-      if (istat /= NF_NOERR) call handle_ncerr(istat,
-     |  'Error defining variable f107d')
-      write(char80,"('daily 10.7 cm solar flux')")
-      istat = nf_put_att_text(ncid,idv_f107d,"long_name",
-     |  len_trim(char80),trim(char80))
-      if (istat /= NF_NOERR) call handle_ncerr(istat,
-     |  'Error defining long_name of variable f107d')
-! f107a:
-      istat = nf_def_var(ncid,"f107a",NF_DOUBLE,1,ids1,idv_f107a)
-      if (istat /= NF_NOERR) call handle_ncerr(istat,
-     |  'Error defining variable f107a')
-      write(char80,"('81-day average 10.7 cm solar flux')")
-      istat = nf_put_att_text(ncid,idv_f107a,"long_name",
-     |  len_trim(char80),trim(char80))
-      if (istat /= NF_NOERR) call handle_ncerr(istat,
-     |  'Error defining long_name of variable f107a')
-! kp:
-      ids2(1) = id_kp
-      ids2(2) = id_ndays
-      istat = nf_def_var(ncid,"kp",NF_DOUBLE,2,ids2,idv_kp)
-      if (istat /= NF_NOERR) call handle_ncerr(istat,
-     |  'Error defining variable kp')
-      write(char80,"('3-hourly kp index')")
-      istat = nf_put_att_text(ncid,idv_kp,"long_name",
-     |  len_trim(char80),trim(char80))
-      if (istat /= NF_NOERR) call handle_ncerr(istat,
-     |  'Error defining long_name of variable kp')
-!
-! Global file attributes:
-!
-! Title:
-      write(char80,"('Geophysical Indices, obtained from NGDC')")
-      istat = nf_put_att_text(ncid,NF_GLOBAL,"title",
-     |  len_trim(char80),trim(char80))
-      if (istat /= NF_NOERR) call handle_ncerr(istat,
-     |  'Error defining global attribute title')
-!
-! Beginning yearday:
-! (make it the 3rd day, so model interpolation can use 1st 2 days)
-      ivar1(1) = iyd(3)
-      istat = nf_put_att_int(ncid,NF_GLOBAL,"yearday_beg",NF_INT,1,
-     |  ivar1)
-      if (istat /= NF_NOERR) call handle_ncerr(istat,
-     |  'Error defining global attribute yearday_beg')
-!
-! Ending yearday:
-! (make it day ngpidays-2, so model interpolation can use last 2 days)
-      ivar1(1) = iyd(ndays-2)
-      istat = nf_put_att_int(ncid,NF_GLOBAL,"yearday_end",NF_INT,1,
-     |  ivar1)
-      if (istat /= NF_NOERR) call handle_ncerr(istat,
-     |  'Error defining global attribute yearday_end')
-!
-! NGDC URL where ascii data was acquired:
-      write(char80,"('ftp://ftp.ngdc.noaa.gov/STP/GEOMAGNETIC_DATA',
-     |  '/INDICES/KP_AP/')")
-      istat = nf_put_att_text(ncid,NF_GLOBAL,"data_source_url",
-     |  len_trim(char80),trim(char80))
-      if (istat /= NF_NOERR) call handle_ncerr(istat,
-     |  'Error defining global attribute data_source_url')
-!
-! Local path to program that wrote the netcdf file:
-      write(char80,"('/home/foster/tgcminp/nc_gpi/mkncgpi.f')")
-      istat = nf_put_att_text(ncid,NF_GLOBAL,"hao_file_write_source",
-     |  len_trim(char80),trim(char80))
-      if (istat /= NF_NOERR) call handle_ncerr(istat,
-     |  'Error defining global attribute hao_file_write_source')
-!
-! Description:
-      write(char120,"('Yearly ascii data files obtained from ',
-     |  'data_source_url; nc file written by hao_file_write_source.')")
-      istat = nf_put_att_text(ncid,NF_GLOBAL,"info",
-     |  len_trim(char120),trim(char120))
-      if (istat /= NF_NOERR) call handle_ncerr(istat,
-     |  'Error defining global attribute info')
-!
-! Exit define mode:
-      istat = nf_enddef(ncid)
-      if (istat /= NF_NOERR) call handle_ncerr(istat,
-     +  'Error return from nf_enddef')
-!
-! Give values to variables:
-!
-! iyd:
-      istat = nf_put_var_int(ncid,idv_iyd,iyd)
-      if (istat /= NF_NOERR) call handle_ncerr(istat,
-     |  'Error giving values to variable iyd')
-! f107d:
-      istat = nf_put_var_real(ncid,idv_f107d,f107d)
-      if (istat /= NF_NOERR) call handle_ncerr(istat,
-     |  'Error giving values to variable f107d')
-! f107a:
-      istat = nf_put_var_real(ncid,idv_f107a,f107a)
-      if (istat /= NF_NOERR) call handle_ncerr(istat,
-     |  'Error giving values to variable f107a')
-! kp:
-      istat = nf_put_var_real(ncid,idv_kp,rkp)
-      if (istat /= NF_NOERR) call handle_ncerr(istat,
-     |  'Error giving values to variable kp')
 
-      istat = nf_close(ncid)
-      end subroutine wrncgpi
-!-----------------------------------------------------------------------
-      integer function idate2iyd(imo,ida,iyr,irec)
-!
-! 2/16/00: Return 7-digit iyd, i.e., 4-digit leading year followed
-!          by 3-digit day, e.g., 1999001,2000365
-!
-! Args:
-      integer,intent(in) :: imo,ida,iyr,irec
-!
-! Local:
-      integer :: i,ndmon(12),iday,iyear
-!
-!                 J  F  M  A  M  J  J  A  S  O  N  D
-      data ndmon/31,28,31,30,31,30,31,31,30,31,30,31/
-!
-! given iyr (2-digit), imo, ida, convert to iyd (yyddd):
-!
-      if (ichdate(imo,ida,iyr).ne.0) then
-        write(6,"('>>> idate2iyd: bad idate iyr,imo,ida=',3i3,
-     |    ' irec=',i6)") iyr,imo,ida,irec
-        idate2iyd = 0
-        return
-      endif
-      ndmon(2) = 28
-      if (mod(iyr,4).eq.0) ndmon(2) = 29
-      iday = 0
-      do i=1,imo-1
-        iday = iday+ndmon(i)
-      enddo
-      if (iyr < 50) then ! assume 21st century
-        iyear = 2000+iyr
-      else               ! assume 20th century
-        iyear = 1900+iyr
-      endif
-      idate2iyd = iyear*1000+iday+ida
-      return
-      end function idate2iyd
-!-----------------------------------------------------------------------
-      integer function ichdate(im,id,iy)
-!
-! Args:
-      integer,intent(in) :: im,id,iy
-!
-! Local:
-      integer :: ndmon(12)
-!
-c                 J  F  M  A  M  J  J  A  S  O  N  D
-      data ndmon/31,28,31,30,31,30,31,31,30,31,30,31/
+c !-----------------------------------------------------------------------
+c !
+c ! >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+c ! >>>>>>>>>>>>>>>>>> Routines below are NOT called <<<<<<<<<<<<<<<<<<<<<
+c ! >>>>>>>>>>>>>>>>>>  They are informational only <<<<<<<<<<<<<<<<<<<<<<
+c ! >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+c !
+c ! The routines mkncgpi, wrncgpi, idate2iyd, and ichdate are NOT
+c ! called by the model. They are provided here as a record of
+c ! how the data is obtained and how the netcdf file /TGCM/data/gpi.nc
+c ! is written. See /home/foster/tgcminp/nc_gpi.
+c !
+c !-----------------------------------------------------------------------
+c       subroutine mkncgpi
+c !
+c ! Read NGDC ascii gpi data, and write netcdf file for use by the model:
+c !
+c       integer luin,mxdays,iq,nbad,imo,ida
+c       parameter(mxdays=10000)
+c       character*120 flnmin
+c       real f107d(mxdays),f107a(mxdays),rkp(8,mxdays)
+c       integer ii,i,iyd(mxdays),iy2,kp(8),ndays
+c       data luin/20/
+c !
+c ! ngdc.1979-2000.dat is NGDC ascii yearly data files obtained
+c ! from the following URL, and catted together into a single file:
+c ! ftp://ftp.ngdc.noaa.gov/STP/GEOMAGNETIC_DATA/INDICES/KP_AP/
+c !
+c       flnmin = " "
+c       flnmin = "ngdc.1979-2000.dat"
+c       open(luin,file=trim(flnmin),status='OLD',err=900)
+c       do i=1,mxdays
+c         read(luin,"(3i2,6x,8i2,37x,f5.1,i1)",end=100) iy2,imo,ida,kp,
+c      +    f107d(i),iq
+c         iyd(i) = idate2iyd(imo,ida,iy2,i)
+c         do ii=1,8
+c           rkp(ii,i) = float(kp(ii)/10)+float(kp(ii)-kp(ii)/10*10)*.1
+c         enddo
+c         f107a(i) = 0.
+c !       if (mod(i,10).eq.0) write(6,"('i=',i5,' iyd=',i8,' f107d=',
+c !    +    f5.1,' rkp=',8f5.1)") i,iyd(i),f107d(i),(rkp(ii,i),ii=1,8)
+c       enddo
+c       write(6,"('>>> need to increase mxdays (did not reach eof',
+c      +  ' with mxdays=',i5,') <<<')") mxdays
+c       call shutdown('mxdays')
+c  100  continue
+c       ndays = i-1
+c       write(6,"('Finished read: ndays=',i5)") ndays
+c c
+c c f107d == 0. if no observation was made (iq=3). Fill these in
+c c by simple interpolation if possible:
+c c
+c       nbad = 0
+c       do i=2,ndays-1
+c         if (f107d(i).le.0.) then
+c           if (f107d(i-1).le.0..or.f107d(i+1).le.0.)
+c      +      write(6,"('>>> warning: 2 or more bad f107d at i=',
+c      +        i5)") i
+c           f107d(i) = .5*(f107d(i-1)+f107d(i+1))
+c           nbad = nbad+1
+c         endif
+c       enddo
+c       if (nbad.gt.0) write(6,"('>>> nbad f107d = ',i5)") nbad
+c c
+c c Find as many f107a (81-day ave) values as possible:
+c c (leave rest zero)
+c c
+c       if (ndays.ge.81) then
+c         do i=41,ndays
+c           if (i+40.gt.ndays) then
+c             ii = i-1
+c             goto 101
+c           endif
+c           f107a(i) = 0.
+c           do ii=i-40,i+40
+c             f107a(i) = f107a(i) + f107d(ii)
+c           enddo
+c           f107a(i) = f107a(i)/81.
+c         enddo
+c  101    continue
+c         write(6,"('Calculated 81-day ave f107a for days ',
+c      +    '41 to ',i5)") ii
+c !       write(6,"('f107a=',/(8f8.2))") (f107a(i),i=1,ndays)
+c       endif
+c !
+c       close(luin)
+c !
+c ! Write netcdf file:
+c       call wrncgpi(iyd,f107d,f107a,rkp,ndays)
+c !
+c       write(6,"('done')")
+c       call shutdown('done')
+c  900  write(6,"('>>> Error opening input file ',a)") trim(flnmin)
+c       call shutdown('flnmin')
+c       end subroutine mkncgpi
+c !-----------------------------------------------------------------------
+c       subroutine wrncgpi(iyd,f107d,f107a,rkp,ndays)
+c       use nchist_module,only: handle_ncerr
+c !
+c ! Args:
+c       integer,intent(in) :: ndays
+c       real,intent(in) :: f107d(ndays),f107a(ndays),rkp(8,ndays)
+c       integer,intent(in) :: iyd(ndays)
+c !
+c ! Local:
+c       integer :: istat,ncid,ids1(1),ivar1(1),ids2(2)
+c       integer :: id_ndays,id_kp,idv_iyd,idv_f107d,idv_f107a,idv_kp
+c       character(len=32) :: ncfile
+c       character(len=80) :: char80
+c       character(len=120) :: char120
+c !
+c ! Open new netcdf dataset:
+c       ncfile = " "
+c       ncfile = "gpi.nc"
+c       istat = nf_create(ncfile,NF_CLOBBER,ncid)
+c       if (istat /= NF_NOERR) call handle_ncerr(istat,
+c      |  'opening new netcdf dataset')
+c !
+c ! Define ndays dimension:
+c       istat = nf_def_dim(ncid,"ndays",ndays,id_ndays)
+c       if (istat /= NF_NOERR) call handle_ncerr(istat,
+c      +  'Error defining ndays dimension')
+c !
+c ! Define kp dimension:
+c       istat = nf_def_dim(ncid,"nkp",8,id_kp)
+c       if (istat /= NF_NOERR) call handle_ncerr(istat,
+c      +  'Error defining kp dimension')
+c !
+c ! Define variables iyd, f107d, f107a, kp:
+c !
+c ! iyd:
+c       ids1(1) = id_ndays
+c       istat = nf_def_var(ncid,"year_day",NF_INT,1,ids1,idv_iyd)
+c       if (istat /= NF_NOERR) call handle_ncerr(istat,
+c      |  'Error defining variable yearday')
+c       write(char80,"('4-digit year followed by 3-digit day')")
+c       istat = nf_put_att_text(ncid,idv_iyd,"long_name",
+c      |  len_trim(char80),trim(char80))
+c       if (istat /= NF_NOERR) call handle_ncerr(istat,
+c      |  'Error defining long_name of variable year_day')
+c ! f107d:
+c       istat = nf_def_var(ncid,"f107d",NF_DOUBLE,1,ids1,idv_f107d)
+c       if (istat /= NF_NOERR) call handle_ncerr(istat,
+c      |  'Error defining variable f107d')
+c       write(char80,"('daily 10.7 cm solar flux')")
+c       istat = nf_put_att_text(ncid,idv_f107d,"long_name",
+c      |  len_trim(char80),trim(char80))
+c       if (istat /= NF_NOERR) call handle_ncerr(istat,
+c      |  'Error defining long_name of variable f107d')
+c ! f107a:
+c       istat = nf_def_var(ncid,"f107a",NF_DOUBLE,1,ids1,idv_f107a)
+c       if (istat /= NF_NOERR) call handle_ncerr(istat,
+c      |  'Error defining variable f107a')
+c       write(char80,"('81-day average 10.7 cm solar flux')")
+c       istat = nf_put_att_text(ncid,idv_f107a,"long_name",
+c      |  len_trim(char80),trim(char80))
+c       if (istat /= NF_NOERR) call handle_ncerr(istat,
+c      |  'Error defining long_name of variable f107a')
+c ! kp:
+c       ids2(1) = id_kp
+c       ids2(2) = id_ndays
+c       istat = nf_def_var(ncid,"kp",NF_DOUBLE,2,ids2,idv_kp)
+c       if (istat /= NF_NOERR) call handle_ncerr(istat,
+c      |  'Error defining variable kp')
+c       write(char80,"('3-hourly kp index')")
+c       istat = nf_put_att_text(ncid,idv_kp,"long_name",
+c      |  len_trim(char80),trim(char80))
+c       if (istat /= NF_NOERR) call handle_ncerr(istat,
+c      |  'Error defining long_name of variable kp')
+c !
+c ! Global file attributes:
+c !
+c ! Title:
+c       write(char80,"('Geophysical Indices, obtained from NGDC')")
+c       istat = nf_put_att_text(ncid,NF_GLOBAL,"title",
+c      |  len_trim(char80),trim(char80))
+c       if (istat /= NF_NOERR) call handle_ncerr(istat,
+c      |  'Error defining global attribute title')
+c !
+c ! Beginning yearday:
+c ! (make it the 3rd day, so model interpolation can use 1st 2 days)
+c       ivar1(1) = iyd(3)
+c       istat = nf_put_att_int(ncid,NF_GLOBAL,"yearday_beg",NF_INT,1,
+c      |  ivar1)
+c       if (istat /= NF_NOERR) call handle_ncerr(istat,
+c      |  'Error defining global attribute yearday_beg')
+c !
+c ! Ending yearday:
+c ! (make it day ngpidays-2, so model interpolation can use last 2 days)
+c       ivar1(1) = iyd(ndays-2)
+c       istat = nf_put_att_int(ncid,NF_GLOBAL,"yearday_end",NF_INT,1,
+c      |  ivar1)
+c       if (istat /= NF_NOERR) call handle_ncerr(istat,
+c      |  'Error defining global attribute yearday_end')
+c !
+c ! NGDC URL where ascii data was acquired:
+c       write(char80,"('ftp://ftp.ngdc.noaa.gov/STP/GEOMAGNETIC_DATA',
+c      |  '/INDICES/KP_AP/')")
+c       istat = nf_put_att_text(ncid,NF_GLOBAL,"data_source_url",
+c      |  len_trim(char80),trim(char80))
+c       if (istat /= NF_NOERR) call handle_ncerr(istat,
+c      |  'Error defining global attribute data_source_url')
+c !
+c ! Local path to program that wrote the netcdf file:
+c       write(char80,"('/home/foster/tgcminp/nc_gpi/mkncgpi.f')")
+c       istat = nf_put_att_text(ncid,NF_GLOBAL,"hao_file_write_source",
+c      |  len_trim(char80),trim(char80))
+c       if (istat /= NF_NOERR) call handle_ncerr(istat,
+c      |  'Error defining global attribute hao_file_write_source')
+c !
+c ! Description:
+c       write(char120,"('Yearly ascii data files obtained from ',
+c      |  'data_source_url; nc file written by hao_file_write_source.')")
+c       istat = nf_put_att_text(ncid,NF_GLOBAL,"info",
+c      |  len_trim(char120),trim(char120))
+c       if (istat /= NF_NOERR) call handle_ncerr(istat,
+c      |  'Error defining global attribute info')
+c !
+c ! Exit define mode:
+c       istat = nf_enddef(ncid)
+c       if (istat /= NF_NOERR) call handle_ncerr(istat,
+c      +  'Error return from nf_enddef')
+c !
+c ! Give values to variables:
+c !
+c ! iyd:
+c       istat = nf_put_var_int(ncid,idv_iyd,iyd)
+c       if (istat /= NF_NOERR) call handle_ncerr(istat,
+c      |  'Error giving values to variable iyd')
+c ! f107d:
+c       istat = nf_put_var_real(ncid,idv_f107d,f107d)
+c       if (istat /= NF_NOERR) call handle_ncerr(istat,
+c      |  'Error giving values to variable f107d')
+c ! f107a:
+c       istat = nf_put_var_real(ncid,idv_f107a,f107a)
+c       if (istat /= NF_NOERR) call handle_ncerr(istat,
+c      |  'Error giving values to variable f107a')
+c ! kp:
+c       istat = nf_put_var_real(ncid,idv_kp,rkp)
+c       if (istat /= NF_NOERR) call handle_ncerr(istat,
+c      |  'Error giving values to variable kp')
 c
-c Check validity of date im/id/iy
-c
-      ichdate = 0
-      if (im.lt.1.or.im.gt.12) then
-        write(6,"('>>> ichdate: bad month=',i3)") im
-        ichdate = 1
-        return
-      endif
-      if (iy.lt.0.or.iy.gt.2050) then
-        write(6,"('>>> ichdate: bad year=',i3)") iy
-        ichdate = 1
-        return
-      endif
-      ndmon(2) = 28
-      if (mod(iy,4).eq.0) ndmon(2) = 29
-      if (id.lt.1.or.id.gt.ndmon(im)) then
-        write(6 ,"('>>> ichdate: bad day=',i4,' (month=',i2,')')")
-     +    id,im
-        ichdate = 1
-        return
-      endif
-      return
-      end function ichdate
+c       istat = nf_close(ncid)
+c       end subroutine wrncgpi
+c !-----------------------------------------------------------------------
+c       integer function idate2iyd(imo,ida,iyr,irec)
+c !
+c ! 2/16/00: Return 7-digit iyd, i.e., 4-digit leading year followed
+c !          by 3-digit day, e.g., 1999001,2000365
+c !
+c ! Args:
+c       integer,intent(in) :: imo,ida,iyr,irec
+c !
+c ! Local:
+c       integer :: i,ndmon(12),iday,iyear
+c !
+c !                 J  F  M  A  M  J  J  A  S  O  N  D
+c       data ndmon/31,28,31,30,31,30,31,31,30,31,30,31/
+c !
+c ! given iyr (2-digit), imo, ida, convert to iyd (yyddd):
+c !
+c       if (ichdate(imo,ida,iyr).ne.0) then
+c         write(6,"('>>> idate2iyd: bad idate iyr,imo,ida=',3i3,
+c      |    ' irec=',i6)") iyr,imo,ida,irec
+c         idate2iyd = 0
+c         return
+c       endif
+c       ndmon(2) = 28
+c       if (mod(iyr,4).eq.0) ndmon(2) = 29
+c       iday = 0
+c       do i=1,imo-1
+c         iday = iday+ndmon(i)
+c       enddo
+c       if (iyr < 50) then ! assume 21st century
+c         iyear = 2000+iyr
+c       else               ! assume 20th century
+c         iyear = 1900+iyr
+c       endif
+c       idate2iyd = iyear*1000+iday+ida
+c       return
+c       end function idate2iyd
+c !-----------------------------------------------------------------------
+c       integer function ichdate(im,id,iy)
+c !
+c ! Args:
+c       integer,intent(in) :: im,id,iy
+c !
+c ! Local:
+c       integer :: ndmon(12)
+c !
+c c                 J  F  M  A  M  J  J  A  S  O  N  D
+c       data ndmon/31,28,31,30,31,30,31,31,30,31,30,31/
+c c
+c c Check validity of date im/id/iy
+c c
+c       ichdate = 0
+c       if (im.lt.1.or.im.gt.12) then
+c         write(6,"('>>> ichdate: bad month=',i3)") im
+c         ichdate = 1
+c         return
+c       endif
+c       if (iy.lt.0.or.iy.gt.2050) then
+c         write(6,"('>>> ichdate: bad year=',i3)") iy
+c         ichdate = 1
+c         return
+c       endif
+c       ndmon(2) = 28
+c       if (mod(iy,4).eq.0) ndmon(2) = 29
+c       if (id.lt.1.or.id.gt.ndmon(im)) then
+c         write(6 ,"('>>> ichdate: bad day=',i4,' (month=',i2,')')")
+c      +    id,im
+c         ichdate = 1
+c         return
+c       endif
+c       return
+c       end function ichdate
+
       end module gpi_module
 !-----------------------------------------------------------------------
 ! Following is ncdump info for /TGCM/data/gpi_1979001-2001031.nc

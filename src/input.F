@@ -6,6 +6,21 @@
 ! Open Source Academic Research License Agreement contained in the file 
 ! tiegcmlicense.txt.
 !
+! -----------------------------------------------------------------------------
+! This file was modified for the integration of the Parallel Data Assimilation
+! Framework (PDAF)
+! Armin Corbin, University of Bonn, Institute for Geodesy and Geoinformation
+!
+! 29 OCT 2019: new model variable to select kp time series in gpi file
+! 09 DEC 2019: file-names of primary and secondary history files of each
+!              ensemble member are numbered
+! 31 AUG 2021: Perturbation of colfac and joulefac
+! 25 Mar 2022: Allow use of Bgrddata when using TIE-GCM 5.0
+! 13 SEP 2022: replaced Nonconforming tab character
+! 28 OCT 2022: added wei05sc_ncfile to namelist file
+! 07 JUL 2023: allocate 'hvols' array to fix  'moved from stack to static storage'
+! -----------------------------------------------------------------------------
+!
       use params_module,only: mxhvols,mxseries,mxseries_sech,mxfsech,
      |  nlat,nlon,nlev,glat1,dlat,glon1,dlon,tgcm_version,tgcm_name,
      |  spval,ispval,nlonp4,mxind_time,nmlat,nmlonp1
@@ -47,7 +62,7 @@
      |  calendar_advance,! if > 0, advance calendar day from start_day
      |  mxday,           ! calendar day (0-mxday)
      |  step,            ! model time step (integer seconds)
-     |  eddy_dif,	 ! 0/1 flag for DOY dependent eddy diffusion (difk, dift, xmue)
+     |  eddy_dif,        ! 0/1 flag for DOY dependent eddy diffusion (difk, dift, xmue)
      |  dynamo,          ! 0/1 flag for dynamo
      |  current_pg,      ! 0/1 flag to add current due to plasma pressure and gravity to rhs (default 1)
      |  current_kq,      ! 0/1 flag to calculate height-integrated current density (default 0)
@@ -98,7 +113,7 @@
 ! will be interpolated to model time, otherwise they will change only
 ! when the given values change. This has no effect on indices given as constants.
 !
-      integer :: indices_interp=1 
+      integer :: indices_interp=1
 !
 ! Import data file names:
       integer,parameter :: mxlen_filename=1024
@@ -115,6 +130,7 @@
      |  weimer_ncfile,    ! path to netcdf weimer01 coefficients file
      |  wei05sc_ncfile,   ! path to netcdf data files for weimer05 model
      |  gpi_ncfile,         ! absolute or relative path to netcdf gpi data file
+     |  gpi_ncfile_kp_var,  ! selected kp time series 'kp', 'hp30', 'hp60', 'hp90'
      |  ncep_ncfile,        ! ncep data file (time-gcm only)
      |  see_ncfile,         ! absolute or relative path to netcdf SEE flux data file
      |  imf_ncfile,         ! absolute or relative path to netcdf IMF data file
@@ -158,16 +174,17 @@
      |  sech_nbyte            ! 4 or 8: write real or double values to secondary file
 !
 ! Namelist for read:
-      namelist/tgcm_input/ 
+      namelist/tgcm_input/
      |  label,step,
      |  source,source_start,output,start,stop,hist,
      |  secout,secstart,secstop,sechist,secflds,
      |  potential_model,eddy_dif,dynamo,tide,tide2,tide3m3,
      |  f107,f107a,power,ctpoten,bximf,byimf,bzimf,swvel,swden,al,
-     |  kp,colfac,joulefac,aurora,gpi_ncfile,gswm_mi_di_ncfile,
-     |  gswm_mi_sdi_ncfile,gswm_nm_di_ncfile,gswm_nm_sdi_ncfile,
-     |  mxhist_prim,mxhist_sech,ntask_lat,ntask_lon,
-     |  start_day,start_year,calendar_advance,see_ncfile,
+     |  kp,colfac,joulefac,aurora,gpi_ncfile,gpi_ncfile_kp_var,
+     |  wei05sc_ncfile,
+     |  gswm_mi_di_ncfile,gswm_mi_sdi_ncfile,gswm_nm_di_ncfile,
+     |  gswm_nm_sdi_ncfile,mxhist_prim,mxhist_sech,ntask_lat,
+     |  ntask_lon,start_day,start_year,calendar_advance,see_ncfile,
      |  ctpoten_time,power_time,bximf_time,byimf_time,bzimf_time,
      |  kp_time,al_time,swden_time,swvel_time,indices_interp,
      |  imf_ncfile,saber_ncfile,tidi_ncfile,sech_nbyte,f107_time,
@@ -188,6 +205,10 @@
       character(len=120) :: cwd  ! current working directory
       integer :: pid ! current process id
 !
+#ifdef USE_PDAF
+      real :: joulefac_0
+      real :: colfac_0
+#endif
       contains
 !-------------------------------------------------------------------
       subroutine input(mytid,ntask)
@@ -236,6 +257,7 @@
       hpss_path = ' '
 !
       gpi_ncfile  = ' '       ! user input gpi file path
+      gpi_ncfile_kp_var = 'kp'
       ncep_ncfile = ' '       ! (time-gcm only)
       see_ncfile  = ' '       ! solar flux data (see module in soldata.F)
 !
@@ -557,6 +579,10 @@
         joulefac = 1.5
         write(6,"('Input: Using default joulefac = ',f9.2)") joulefac
       endif
+#ifdef USE_PDAF
+      joulefac_0 = joulefac
+      colfac_0 = colfac
+#endif
 !
 ! O+ diffusion cap:
       if (opdiffcap==spval) then
@@ -709,6 +735,9 @@
       end subroutine mkntask
 !-----------------------------------------------------------------------
       subroutine inp_primhist
+#ifdef USE_PDAF
+      use mod_parallel_pdaf, only: task_id
+#endif
 !
 ! Validate primary history inputs:
 !
@@ -720,11 +749,16 @@
      |  nsec_start(mxseries),nsec_stop(mxseries),
      |  nsec_hist (mxseries)
       character(len=1024) :: ch1024
-      character(len=1024) :: hvols(mxhvols)
+      character(len=1024), dimension(:), allocatable :: hvols
+#ifdef USE_PDAF
+      character(len=1024) :: extOut
+#endif 
 !
 ! External:
       integer,external :: numfiles
       integer(kind=8),external :: mtime_to_nsec
+!
+      allocate(hvols(mxhvols))
 !
 ! 8-byte integer step:
       step8 = step
@@ -965,6 +999,10 @@
 !  'vollast','by','n' to hvols)
 !
       hvols = ' '
+#ifdef USE_PDAF
+      write(extOut,'(a,i4.4,2a)') 'ens_', task_id, '_', trim(output(1))
+      output(1) = extOut
+#endif 
       nout = mkhvols(output,hvols,mxhvols)
       if (nout==0) then
         write(6,"(/,'>>> INPUT: need at least one output volume',/)") 
@@ -1020,9 +1058,15 @@
      |    i3,/)") mxhist_prim
         call shutdown('OUTPUT')
       endif
+
+      deallocate(hvols)
+
       end subroutine inp_primhist
 !-------------------------------------------------------------------
       subroutine inp_sechist
+#ifdef USE_PDAF
+      use mod_parallel_pdaf, only: task_id
+#endif      
 !
 ! Validate secondary history inputs:
 !
@@ -1034,14 +1078,19 @@
      |  nsec_start(mxseries_sech),nsec_stop(mxseries_sech),
      |  nsec_hist (mxseries_sech)
       character(len=1024) :: ch1024
-      character(len=1024) :: hvols(mxhvols)
+      character(len=1024), dimension(:), allocatable :: hvols
       character(len=16) ::
      |  secflds_tmp(mxfsech)
       logical :: found
+#ifdef USE_PDAF
+      character(len=1024) :: extOut
+#endif 
 !
 ! External:
       integer,external :: numfiles
       integer(kind=8),external :: mtime_to_nsec
+!
+      allocate(hvols(mxhvols))
 !
 ! 8-byte integer step:
       step8 = step
@@ -1058,6 +1107,10 @@
 !  'vollast','by','n' to hvols)
 !
       hvols = ' '
+#ifdef USE_PDAF
+      write(extOut,'(a,i4.4,2a)') 'ens_', task_id, '_', trim(secout(1))
+      secout(1) = extOut
+#endif 
       nout = mkhvols(secout,hvols,mxhvols)
       if (nout==0.and.n > 0) then
         write(6,"(/,'>>> INPUT: need at least one secondary ',
@@ -1397,6 +1450,9 @@
      |    '4 (write real to sech) or 8 (write double to sech)')")
         call shutdown('sech_nbyte')
       endif
+
+      deallocate(hvols)
+
       end subroutine inp_sechist
 !-----------------------------------------------------------------------
       subroutine inp_print(ntask)
@@ -1427,7 +1483,7 @@
      |    trim(wei05sc_ncfile)
 
       if (len_trim(gpi_ncfile) > 0)
-     |  write(6,"('  gpi run: gpi_ncfile = ',a)") trim(gpi_ncfile)  
+     |  write(6,"('  gpi run: gpi_ncfile = ',a)") trim(gpi_ncfile)
       if (len_trim(see_ncfile) > 0)
      |  write(6,"('  SEE data: see_ncfile = ',a)") trim(see_ncfile)
       if (len_trim(imf_ncfile) > 0)
@@ -2223,11 +2279,11 @@
 !
 ! Background lbc data (T,U,V,Z) is available only at 2.5-deg resolution:
 !
-      if (len_trim(bgrddata_ncfile) > 0.and.dlat==5.0) then
-        write(6,"(/,'>>> Background lbc data files (BGRDDATA_NCFILE)',
-     |    ' are available only at the 2.5-degree model resolution.')")
-        call shutdown('BGRDDATA_NCFILE not allowed at 5-deg resolution')
-      endif
+c       if (len_trim(bgrddata_ncfile) > 0.and.dlat==5.0) then
+c         write(6,"(/,'>>> Background lbc data files (BGRDDATA_NCFILE)',
+c      |    ' are available only at the 2.5-degree model resolution.')")
+c         call shutdown('BGRDDATA_NCFILE not allowed at 5-deg resolution')
+c       endif
 !
 ! CTMT data is available only at 2.5-deg resolution:
 !
