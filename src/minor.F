@@ -1,7 +1,7 @@
 !
-      subroutine minor(tn,o2,o1,n2,he,fcomp,fcomp_tm1,fcomp_out,
-     |  fcomp_tm1_out,sloss,sprod,flbc,fubc,rmx,phix,alfax,lev0,lev1,
-     |  lon0,lon1,lat0,lat1,idebug,name)
+      subroutine minor(tn,o2,o1,he,mbar,barm,xnmbar,w,fcomp,fcomp_tm1,
+     |  fcomp_out,fcomp_tm1_out,sloss,sprod,flbc,fubc,rmx,phix,alfax,
+     |  lev0,lev1,lon0,lon1,lat0,lat1,idebug,name)
 !
 ! This software is part of the NCAR TIE-GCM.  Use is governed by the 
 ! Open Source Academic Research License Agreement contained in the file 
@@ -10,19 +10,18 @@
 ! Advance minor species fcomp by one time step.
 ! This is called from comp_no and comp_n4s.
 !
-      use params_module,only: nlat,nlon,nlonp4,dlat,glat
-      use lbc,only: b,fb ! b(nlonp4,2,2), fb(nlonp4,2)
+      use params_module,only: nlonp4,glat
+      use lbc,only: b,fb
       use cons_module,only: rmassinv_o2,rmassinv_o1,rmassinv_n2,dzp,
-     |  boltz,p0,expz,rmass_o2,rmass_o1,rmass_n2,hor,dtr,pi,shapiro,
+     |  p0,expz,rmass_o2,rmass_o1,rmass_n2,hor,dtr,pi,shapiro,
      |  difk,expzmid_inv,expzmid,dtx2inv,grav,avo,dtsmooth,
-     |  dtsmooth_div2,difhor,kut,rmassinv_he
+     |  dtsmooth_div2,difhor,rmass_he,rmassinv_he
       use init_module,only: iday
-      use fields_module,only: w,itc,itp,tlbc
+      use fields_module,only: tlbc
+      use matutil_module,only: matinv3
       use addfld_module,only: addfld
-#ifdef MPI
       use mpi_module,only: mp_bndlons_f3d, mp_periodic_f3d,
      |  mp_periodic_f2d
-#endif
 !
 ! VT means vampir tracing:
 !
@@ -40,8 +39,11 @@
      |  tn,       ! neutral temperature (deg K)
      |  o2,       ! molecular oxygen (mmr)
      |  o1,       ! atomic oxygen (mmr)
-     |  n2,       ! molecular nitrogen (mmr)
      |  he,       ! helium (mmr)
+     |  mbar,     ! mean molecular weight
+     |  barm,     ! mean molecular weight
+     |  xnmbar,   ! p0*e(-z)*mbar/kT
+     |  w,        ! vertical wind
      |  fcomp,    ! input species (for finite diffs in advec)
      |  fcomp_tm1 ! input species at time n-1 
 !
@@ -55,7 +57,7 @@
       real,dimension(lon0:lon1,lat0:lat1),intent(in) :: fubc
 !
       real,intent(in) :: 
-     |  phix(3), ! diffusion vector
+     |  phix(4), ! diffusion vector
      |  rmx,     ! molecular weight of fcomp minor species
      |  alfax    ! thermal diffusion coefficient
 !
@@ -74,26 +76,29 @@
      |  fcomp_tm1_out  ! output species at time n-1
 !
 ! Local:
-      integer :: k,i,lonbeg,lonend,lat,ier
+      integer :: k,i,lonbeg,lonend,lat,n,ier
 !
       integer :: nk,nkm1,nlevs
       real,parameter :: small=1.e-12, tau=1.86e+3, t00=273.
-      real :: salfa12,salfa21,salfax1,salfax2,rlat,dfac
+      real :: rlat,wi
       real,dimension(lev0:lev1,lon0:lon1) ::
      |  hadvec,   ! horizontal advection (output of sub advec) (s13)
      |  do2dz,    ! do2/dz(k)    (s6)
      |  do1dz,    ! do1/dz(k)    (s7)
+     |  dhedz,    ! dhe/dz(k)
      |  pso2,     ! o2           (s8)
      |  pso1,     ! o1           (s9)
+     |  pshe,     ! he
      |  dmdz,     ! dm/dz(k)     (s10)
-     |  xmbar_k,  ! mbar (k)     (s11)
-     |  xmbar_kh, ! mbar (k+1/2) (s12)
+     |  xmbar_k,  ! barm (k)     (s11)
+     |  xmbar_kh, ! mbar (k)     (s12)
      |  tni,      ! tn (k)       (s5)
      |  s0prod,   ! sprod*mx/nmbar (s15)
-     |  alfa11,alfa12,alfa21,alfa22, ! (s1,s2,s3,s4)
      |  ex,ax,    ! (s12,s11)
      |  thdiff,   ! thermal diffusion term (s12)
-     |  p_coef,q_coef,r_coef,f_rhs ! coefficients for tridiagonal solver
+     |  p_coef,q_coef,r_coef,f_rhs, ! coefficients for tridiagonal solver
+     |  molp,molq,molr,eddyp,eddyq,eddyr,moldif,eddydif,veradv,
+     |  loss_out,dpdt
 !
       real,dimension(lev0:lev1,lon0:lon1,lat0:lat1) ::
      |  ftm1_smooth  ! time-smoothed field at time n-1 (s10)
@@ -108,7 +113,13 @@
      |  bo2,bo1,bhe,  ! (t4,t5)
      |  dfactor       ! (t7) (formerly output of sub dfact)
 !
-      real :: phi(2,3)
+! Following diffusion related variables are from comp
+      real :: phi(3,4) ! mutual thermal diffusion coefficients among major species
+      real,dimension(3) ::
+     |  ss,       ! exponent factor for diff_fac
+     |  diff_fac, ! Correction factor for diffusion coeff betweeen helium and o2,o,n2
+     |  salfax,salfaxinvalfa
+      real,dimension(3,3) :: alfa,invalfa
 !
 #ifdef VT
 !     code = 114 ; state = 'minor' ; activity='ModelCode'
@@ -117,13 +128,16 @@
 !
 !     write(6,"('Enter minor')")
 
-      phi(1,:) = (/0.   , 1.35,  1.11 /)
-      phi(2,:) = (/0.673, 0.  ,  0.769/)
+      phi(:,1)=(/0.  ,0.673,0.270/)
+      phi(:,2)=(/1.35,0.   ,0.404/)
+      phi(:,3)=(/2.16,1.616,0.   /)
+      phi(:,4)=(/1.11,0.769,0.322/)
 
-      salfa12=phi(1,2)-phi(1,3)
-      salfa21=phi(2,1)-phi(2,3)
-      salfax1=phix(1)-phix(3)
-      salfax2=phix(2)-phix(3)
+      ss = (/1.710, 1.749, 1.718/) ! for o2,o,n2
+
+      salfax(1)=phix(1)-phix(4)
+      salfax(2)=phix(2)-phix(4)
+      salfax(3)=phix(3)-phix(4)
 
       nk = lev1-lev0+1
       nkm1 = nk-1
@@ -159,7 +173,6 @@
 
       enddo ! lat=lat0,lat1
 !------------------------- End first latitude scan ---------------------
-#ifdef MPI
 !
 ! Get subdomain boundary longitudes for ftm1_jdif, to complete shapiro
 ! time smoother. (mp_periodic_f3d call opened up 8/31/11)
@@ -167,7 +180,6 @@
       call mp_periodic_f3d(ftm1_jdif(:,lon0:lon1,lat0:lat1),
      |  lev0,lev1,lon0,lon1,lat0,lat1,1)
       call mp_bndlons_f3d(ftm1_jdif,nlevs,lon0,lon1,lat0,lat1,1,0)
-#endif
 !----------------------- Begin second latitude scan --------------------
       do lat=lat0,lat1
 !       write(6,"('Minor second latitude scan: lat=',i3)") lat
@@ -190,15 +202,13 @@
 ! Horizontal advection (pass k vs i slices at full task subdomain 
 ! longitudes, and the 5 latitudes centered over the current latitude).
 !
-      call advec(fcomp(:,:,lat-2:lat+2),hadvec,lev0,lev1,lon0,lon1,
-     |  lat,0)
+      call advec(fcomp(:,:,lat-2:lat+2),hadvec,lev0,lev1,lon0,lon1,lat)
 !
 ! Periodic points for advection:
-#ifdef MPI
+!
 ! Oct, 2010: Comment this call to prevent divergence in N4S and NO
 !   between runs w/ different numbers of processors (see also divrg.F):
 !     call mp_periodic_f2d(hadvec,lon0,lon1,lat,lat)
-#endif
 !
 ! Set periodic points to zero:
 !     if (lon0==1) hadvec(:,lon0:lon0+1) = 0.
@@ -214,53 +224,53 @@
       endif
 !
       do i=lon0,lon1
-        bo2(i) = b(i,1,1)*o2(lev0,i,lat)+b(i,1,2)*o1(lev0,i,lat)+
-     |    b(i,1,3)*he(lev0,i,lat)+fb(i,1)
-        bo1(i) = b(i,2,1)*o2(lev0,i,lat)+b(i,2,2)*o1(lev0,i,lat)+
-     |    b(i,2,3)*he(lev0,i,lat)+fb(i,2)
-        bhe(i) = b(i,3,1)*o2(lev0,i,lat)+b(i,3,2)*o1(lev0,i,lat)+
-     |    b(i,3,3)*he(lev0,i,lat)+fb(i,3)
+        bo2(i) = b(1,1)*o2(lev0,i,lat)+b(1,2)*o1(lev0,i,lat)+
+     |    b(1,3)*he(lev0,i,lat)+fb(1)
+        bo1(i) = b(2,1)*o2(lev0,i,lat)+b(2,2)*o1(lev0,i,lat)+
+     |    b(2,3)*he(lev0,i,lat)+fb(2)
+        bhe(i) = b(3,1)*o2(lev0,i,lat)+b(3,2)*o1(lev0,i,lat)+
+     |    b(3,3)*he(lev0,i,lat)+fb(3)
         xmbari(i) = 1./
      |    (bo2(i)*rmassinv_o2+
      |     bo1(i)*rmassinv_o1+
-     |     (1.-bo2(i)-bo1(i)-bhe(i))*rmassinv_n2+
-     |     bhe(i)*rmassinv_he)
+     |     bhe(i)*rmassinv_he+
+     |     (1.-bo2(i)-bo1(i)-bhe(i))*rmassinv_n2)
       enddo ! i=lon0,lon1
 !
-! xmbar_kh = mbar(k+1/2):
+! xmbar_kh = mbar, xmbar_k = barm:
       do i=lon0,lon1
         do k=lev0,lev1
-          xmbar_kh(k,i) = 1./
-     |      (o2(k,i,lat)*rmassinv_o2+
-     |       o1(k,i,lat)*rmassinv_o1+
-     |       n2(k,i,lat)*rmassinv_n2+
-     |       he(k,i,lat)*rmassinv_he)
+          xmbar_kh(k,i) = mbar(k,i,lat)
+          xmbar_k(k,i) = barm(k,i,lat)
         enddo ! k=lev0,lev1
       enddo ! i=lon0,lon1
 !
-! btf 6/16/14: To be completely correct and consistent, need to
+! To be completely correct and consistent, need to
 !   add pshe and dhedz below (including calculation of ex), to 
 !   include helium in diffusion of minor species.
+! Ben Foster 2014/06/16 pointed it out, Haonan Wu 2024/03/20 implemented
 !
 ! Lower boundary:
       do i=lon0,lon1
-        xmbar_k(lev0,i) = .5*(xmbari(i)+xmbar_kh(lev0,i))
         dmdz(lev0,i) = (xmbar_kh(lev0,i)-xmbari(i))/dzp
         pso1(lev0,i) = .5*(bo1(i)+o1(lev0,i,lat))  
         pso2(lev0,i) = .5*(bo2(i)+o2(lev0,i,lat))  
+        pshe(lev0,i) = .5*(bhe(i)+he(lev0,i,lat))
         do1dz(lev0,i) = (o1(lev0,i,lat)-bo1(i))/dzp
         do2dz(lev0,i) = (o2(lev0,i,lat)-bo2(i))/dzp
+        dhedz(lev0,i) = (he(lev0,i,lat)-bhe(i))/dzp
       enddo ! i=lon0,lon1
 !
 ! Levels 2 -> lev1:
       do i=lon0,lon1
         do k=lev0+1,lev1
-          xmbar_k(k,i) = .5*(xmbar_kh(k,i)+xmbar_kh(k-1,i))
           dmdz(k,i) = (xmbar_kh(k,i)-xmbar_kh(k-1,i))/dzp
           pso1(k,i) = .5*(o1(k,i,lat)+o1(k-1,i,lat))
           pso2(k,i) = .5*(o2(k,i,lat)+o2(k-1,i,lat))
+          pshe(k,i) = .5*(he(k,i,lat)+he(k-1,i,lat))
           do1dz(k,i) = (o1(k,i,lat)-o1(k-1,i,lat))/dzp
           do2dz(k,i) = (o2(k,i,lat)-o2(k-1,i,lat))/dzp
+          dhedz(k,i) = (he(k,i,lat)-he(k-1,i,lat))/dzp
         enddo ! k=lev0+1,lev1
       enddo ! i=lon0,lon1
 !
@@ -284,9 +294,13 @@
      |    'lev',lev0,lev1,'lon',lon0,lon1,lat)
         call addfld('PSO2'    ,' ',' ',pso2    ,
      |    'lev',lev0,lev1,'lon',lon0,lon1,lat)
+        call addfld('PSHE'    ,' ',' ',pshe    ,
+     |    'lev',lev0,lev1,'lon',lon0,lon1,lat)
         call addfld('DO1DZ'   ,' ',' ',do1dz   ,
      |    'lev',lev0,lev1,'lon',lon0,lon1,lat)
         call addfld('DO2DZ'   ,' ',' ',do2dz   ,
+     |    'lev',lev0,lev1,'lon',lon0,lon1,lat)
+        call addfld('DHEDZ'   ,' ',' ',dhedz   ,
      |    'lev',lev0,lev1,'lon',lon0,lon1,lat)
         call addfld('TNI'     ,' ',' ',tni     ,
      |    'lev',lev0,lev1,'lon',lon0,lon1,lat)
@@ -294,45 +308,64 @@
  
       do i=lon0,lon1
         do k=lev0,lev1-1
-          s0prod(k,i) = sprod(k,i,lat)*rmx*boltz*tn(k,i,lat)/  ! s15
-     |      (p0*expz(k)*xmbar_kh(k,i))
+          s0prod(k,i) = sprod(k,i,lat)*rmx/xnmbar(k,i,lat)  ! s15
         enddo ! k=lev0,lev1-1
       enddo ! i=lon0,lon1
 
       do i=lon0,lon1
         do k=lev0,lev1
-          alfa11(k,i) = -(phi(1,3)+salfa12*pso1(k,i)) ! s1
-          alfa12(k,i) = salfa12*pso2(k,i)             ! s2
-          alfa21(k,i) = salfa21*pso1(k,i)             ! s3
-          alfa22(k,i) = -(phi(2,3)+salfa21*pso2(k,i)) ! s4
 !
-          ex(k,i) =                                   ! s12
-     |      ((salfax1*alfa22(k,i)-salfax2*alfa21(k,i))*(do2dz(k,i)-
+! Correction factors for mutual diffusion of helium with o2,o,n2
+          do n = 1,3
+            diff_fac(n) = (tni(k,i)/t00)**(1.75-ss(n))
+          enddo
+!
+! alpha matrix (also see comp)
+          alfa(1,1) = -(phi(1,4)+
+     |      (phi(1,2)-phi(1,4))*pso1(k,i)+
+     |      (diff_fac(1)*phi(1,3)-phi(1,4))*pshe(k,i))
+          alfa(2,2) = -(phi(2,4)+
+     |      (phi(2,1)-phi(2,4))*pso2(k,i)+
+     |      (diff_fac(2)*phi(2,3)-phi(2,4))*pshe(k,i))
+          alfa(3,3) = -(diff_fac(3)*phi(3,4)+
+     |      (diff_fac(1)*phi(3,1)-diff_fac(3)*phi(3,4))*pso2(k,i)+
+     |      (diff_fac(2)*phi(3,2)-diff_fac(3)*phi(3,4))*pso1(k,i))
+          alfa(1,2) = (phi(1,2)-phi(1,4))*pso2(k,i)
+          alfa(1,3) = (diff_fac(1)*phi(1,3)-phi(1,4))*pso2(k,i)
+          alfa(2,1) = (phi(2,1)-phi(2,4))*pso1(k,i)
+          alfa(2,3) = (diff_fac(2)*phi(2,3)-phi(2,4))*pso1(k,i)
+          alfa(3,1) =
+     |      (diff_fac(1)*phi(3,1)-diff_fac(3)*phi(3,4))*pshe(k,i)
+          alfa(3,2) =
+     |      (diff_fac(2)*phi(3,2)-diff_fac(3)*phi(3,4))*pshe(k,i)
+!
+! alpha_x * inv(alpha)
+          invalfa = matinv3(alfa)
+          do n = 1,3
+            salfaxinvalfa(n) = dot_product(salfax,invalfa(:,n))
+          enddo
+!
+! 1-(m+dm/dz/m) + alpha_x*inv(alpha)*(dps/dz-(1-(mi+dm/dz/m))*ps)
+          ex(k,i) = 1.-(rmx+dmdz(k,i))/xmbar_k(k,i)+
+     |      salfaxinvalfa(1)*(do2dz(k,i)-
      |      (1.-(rmass_o2+dmdz(k,i))/xmbar_k(k,i))*pso2(k,i))+
-     |      (salfax2*alfa11(k,i)-salfax1*alfa12(k,i))*
-     |      (do1dz(k,i)-(1.-(rmass_o1+dmdz(k,i))/xmbar_k(k,i))*
-     |      pso1(k,i)))/(alfa11(k,i)*alfa22(k,i)-alfa12(k,i)*
-     |      alfa21(k,i))+1.-(rmx+dmdz(k,i))/xmbar_k(k,i)
+     |      salfaxinvalfa(2)*(do1dz(k,i)-
+     |      (1.-(rmass_o1+dmdz(k,i))/xmbar_k(k,i))*pso1(k,i))+
+     |      salfaxinvalfa(3)*(dhedz(k,i)-
+     |      (1.-(rmass_he+dmdz(k,i))/xmbar_k(k,i))*pshe(k,i))
 !
           dmdz(k,i) = dmdz(k,i)/xmbar_k(k,i)          ! s10
 !
           ax(k,i) = 
      |      -xmbar_k(k,i)/(tau*rmass_n2)*(t00/tni(k,i))**0.25/
-     |      (phix(3)+salfax1*pso2(k,i)+salfax2*pso1(k,i))
+     |      (phix(4)+salfax(1)*pso2(k,i)+
+     |      salfax(2)*pso1(k,i)+salfax(3)*pshe(k,i))
 
         enddo ! k=lev0,lev1
       enddo ! i=lon0,lon1
 
       if (idebug > 0) then
         call addfld('S0PROD',' ',' ',s0prod,
-     |    'lev',lev0,lev1,'lon',lon0,lon1,lat)
-        call addfld('ALFA11',' ',' ',alfa11,
-     |    'lev',lev0,lev1,'lon',lon0,lon1,lat)
-        call addfld('ALFA12',' ',' ',alfa12,
-     |    'lev',lev0,lev1,'lon',lon0,lon1,lat)
-        call addfld('ALFA21',' ',' ',alfa21,
-     |    'lev',lev0,lev1,'lon',lon0,lon1,lat)
-        call addfld('ALFA22',' ',' ',alfa22,
      |    'lev',lev0,lev1,'lon',lon0,lon1,lat)
         call addfld('EX_MNR'    ,' ',' ',ex,
      |    'lev',lev0,lev1,'lon',lon0,lon1,lat)
@@ -365,7 +398,7 @@
 ! (dfactor was in sub dfact in earlier versions)
 !
       if (difhor > 0) then
-        rlat = (glat(1)+(lat-1)*dlat)*dtr
+        rlat = glat(lat)*dtr
         if (abs(rlat)-pi/4.5 >= 0.) then
           dfactor(:) = hor(lat)+1.
         else
@@ -383,23 +416,32 @@
 !
       do i=lon0,lon1
         do k=lev0,lev1-1
+!
+! molecular diffusion coefficients
+          molp(k,i) = ax(k  ,i)*(1./dzp+.5*thdiff(k  ,i))
+          molr(k,i) = ax(k+1,i)*(1./dzp-.5*thdiff(k+1,i))
+          molq(k,i) =
+     |      ax(k  ,i)*(1./dzp-.5*thdiff(k  ,i))+
+     |      ax(k+1,i)*(1./dzp+.5*thdiff(k+1,i))
+!
+! eddy diffusion coefficients
+          eddyp(k,i) = expzmid_inv*difk(k,iday)*(1./dzp-.5*dmdz(k,i))
+          eddyr(k,i) = expzmid*difk(k+1,iday)*(1./dzp+.5*dmdz(k+1,i))
+          eddyq(k,i) =
+     |      expzmid_inv*difk(k,iday)*(1./dzp+.5*dmdz(k,i))+
+     |      expzmid*difk(k+1,iday)*(1./dzp-.5*dmdz(k+1,i))
+!
+! vertical advection
+          wi = 0.5*(w(k,i,lat)+w(k+1,i,lat))
 ! s1
-          p_coef(k,i) = ax(k,i)/dzp*(1./dzp+.5*thdiff(k,i))-expz(k)*
-     |      (expzmid_inv*difk(k,iday)*dfactor(i)*(1./dzp-.5*dmdz(k,i))+
-     |      0.25*(w(k,i,lat,itc)+w(k+1,i,lat,itc)))/
-     |      dzp
+          p_coef(k,i) = molp(k,i)/dzp-expz(k)*
+     |      (eddyp(k,i)*dfactor(i)+0.5*wi)/dzp
 ! s3
-          r_coef(k,i) = ax(k+1,i)/dzp*(1./dzp-.5*thdiff(k+1,i))-expz(k)*
-     |      (expzmid*difk(k+1,iday)*dfactor(i)*(1./dzp+.5*dmdz(k+1,i))-
-     |      0.25*(w(k,i,lat,itc)+w(k+1,i,lat,itc)))/
-     |      dzp
+          r_coef(k,i) = molr(k,i)/dzp-expz(k)*
+     |      (eddyr(k,i)*dfactor(i)-0.5*wi)/dzp
 ! s2
-          q_coef(k,i) = 
-     |      -(ax(k  ,i)/dzp*(1./dzp-.5*thdiff(k  ,i)) +
-     |        ax(k+1,i)/dzp*(1./dzp+.5*thdiff(k+1,i)))+
-     |      expz(k)*((expzmid_inv*difk(k,iday)*(1./dzp+.5*dmdz(k,i))+
-     |      expzmid*difk(k+1,iday)*(1./dzp-.5*dmdz(k+1,i)))*
-     |      dfactor(i)/dzp-sloss(k,i,lat)+dtx2inv)
+          q_coef(k,i) = -molq(k,i)/dzp+expz(k)*
+     |      (eddyq(k,i)*dfactor(i)/dzp+dtx2inv-sloss(k,i,lat))
 ! s4
           f_rhs(k,i) = expz(k)*(ftm1_smooth(k,i,lat)*
      |      dtx2inv-hadvec(k,i)+s0prod(k,i))
@@ -429,7 +471,7 @@
         call addfld('FSMOOTH',' ',' ',
      |    ftm1_smooth(lev0:lev1-1,lon0:lon1,lat),
      |    'lev',lev0,lev1-1,'lon',lon0,lon1,lat)
-        call addfld('W_OMEGA',' ',' ',w(lev0:lev1,lon0:lon1,lat,itc),
+        call addfld('W_OMEGA',' ',' ',w(lev0:lev1,lon0:lon1,lat),
      |    'lev',lev0,lev1,'lon',lon0,lon1,lat)
         call addfld('P_COEF' ,' ',' ',p_coef(lev0:lev1-1,:),
      |    'lev',lev0,lev1-1,'lon',lon0,lon1,lat)
@@ -452,7 +494,48 @@
       if (idebug > 0)
      |  call addfld('MNR_SOLV'  ,' ',' ',fcomp_out(:,lon0:lon1,lat),
      |    'lev',lev0,lev1,'lon',lon0,lon1,lat)
-
+!
+      do i=lon0,lon1
+        do k=lev0,lev1
+          dpdt(k,i) = dtx2inv*
+     |      (fcomp_out(k,i,lat)-ftm1_smooth(k,i,lat))
+        enddo
+        do k=lev0,lev1-1
+          loss_out(k,i) = sloss(k,i,lat)*fcomp_out(k,i,lat)
+        enddo
+        do k=lev0+1,lev1-1
+          wi = 0.5*(w(k,i,lat)+w(k+1,i,lat))
+          moldif(k,i) = -1/expz(k)/dzp*
+     |      (molp(k,i)*fcomp_out(k-1,i,lat)-
+     |       molq(k,i)*fcomp_out(k  ,i,lat)+
+     |       molr(k,i)*fcomp_out(k+1,i,lat))
+          eddydif(k,i) = dfactor(i)/dzp*
+     |      (eddyp(k,i)*fcomp_out(k-1,i,lat)-
+     |       eddyq(k,i)*fcomp_out(k  ,i,lat)+
+     |       eddyr(k,i)*fcomp_out(k+1,i,lat))
+          veradv(k,i) = wi/(2*dzp)*
+     |      (fcomp_out(k+1,i,lat)-fcomp_out(k-1,i,lat))
+        enddo
+      enddo
+!
+      call addfld('D'//name//'DT',name//' changing rate','s-1',
+     |  dpdt,'lev',lev0,lev1,'lon',lon0,lon1,lat)
+      call addfld(name//'_PROD',name//' production','s-1',
+     |  s0prod(lev0:lev1-1,:),'lev',lev0,lev1-1,'lon',lon0,lon1,lat)
+      call addfld(name//'_LOSS',name//' loss','s-1',
+     |  loss_out(lev0:lev1-1,:),'lev',lev0,lev1-1,'lon',lon0,lon1,lat)
+      call addfld(name//'_MOLDIF',name//' molecular diffusion','s-1',
+     |  moldif(lev0+1:lev1-1,:),
+     |  'lev',lev0+1,lev1-1,'lon',lon0,lon1,lat)
+      call addfld(name//'_EDDYDIF',name//' eddy diffusion','s-1',
+     |  eddydif(lev0+1:lev1-1,:),
+     |  'lev',lev0+1,lev1-1,'lon',lon0,lon1,lat)
+      call addfld(name//'_VERADV',name//' vertical advection','s-1',
+     |  -veradv(lev0+1:lev1-1,:),
+     |  'lev',lev0+1,lev1-1,'lon',lon0,lon1,lat)
+      call addfld(name//'_HORADV',name//' horizontal advection','s-1',
+     |  -hadvec(lev0:lev1-1,:),'lev',lev0,lev1-1,'lon',lon0,lon1,lat)
+!
       enddo ! lat=lat0,lat1
 !----------------------- End second latitude scan ----------------------
 !
@@ -461,7 +544,7 @@
 ! not including ghost cells.
 !
       call filter_minor(fcomp_out(:,lon0:lon1,lat0:lat1),
-     |  lev0,lev1,lon0,lon1,lat0,lat1,kut,name)
+     |  lev0,lev1,lon0,lon1,lat0,lat1,name)
 !
 !----------------------- Begin third latitude scan --------------------
       do lat=lat0,lat1
@@ -488,12 +571,10 @@
 !----------------------- End third latitude scan ----------------------
 !
 ! Periodic points for fcomp_out and fcomp_tm1_out:
-#ifdef MPI
       call mp_periodic_f3d(fcomp_out(:,lon0:lon1,lat0:lat1),
      |  lev0,lev1,lon0,lon1,lat0,lat1,1)
       call mp_periodic_f3d(fcomp_tm1_out(:,lon0:lon1,lat0:lat1),
      |  lev0,lev1,lon0,lon1,lat0,lat1,1)
-#endif
 !
 !----------------------- Begin fourth latitude scan --------------------
       do lat=lat0,lat1
@@ -537,25 +618,17 @@
 !
       end subroutine minor
 !-----------------------------------------------------------------------
-      subroutine filter_minor(fout,lev0,lev1,lon0,lon1,lat0,lat1,kut,
-     |  name)
+      subroutine filter_minor(fout,lev0,lev1,lon0,lon1,lat0,lat1,name)
 !
 ! Filter minor species (called from minor after trsolv)
 !
-      use params_module,only: nlonp4,nlon,nlat
-      use filter_module,only: filter2
+      use params_module,only: nlonp4
 !
-#ifdef MPI
       use mpi_module,only: mp_gatherlons_f3d,mp_scatterlons_f3d,mytidi
       implicit none
-#else
-      implicit none
-      integer :: mytidi=0
-#endif
 !
 ! Args:
       integer,intent(in) :: lev0,lev1,lon0,lon1,lat0,lat1
-      integer,intent(in) :: kut(nlat)
       real,intent(inout) :: fout(lev0:lev1,lon0:lon1,lat0:lat1)
       character(len=*),intent(in) :: name
 !
@@ -568,7 +641,6 @@
 ! Local:
       integer :: i,j,ier
       real :: f_ik(nlonp4,lev0:lev1),f_kij(lev0:lev1,nlonp4,lat0:lat1)
-      real :: fmin,fmax
 !
 #ifdef VT
 !     code = 123 ; state = 'filter_minor' ; activity='Filtering'
@@ -584,14 +656,11 @@
         enddo
       enddo
 !
-#ifdef MPI
-!
 ! Gather longitudes into tasks in first longitude column of task table
 !   (leftmost of each j-row) for global fft. (i.e., tasks with mytidi==0
 !   gather lons from other tasks in that row). This includes all latitudes.
 !
       call mp_gatherlons_f3d(f_kij,lev0,lev1,lon0,lon1,lat0,lat1,1,name)
-#endif
 !
 ! Only leftmost tasks at each j-row of tasks does the global filtering:
       if (mytidi==0) then
@@ -599,13 +668,12 @@
 ! Loop through subdomain latitudes:
         latscan: do j=lat0,lat1
 !
-! Define 2d array with all longitudes for filter2:
+! Define 2d array with all longitudes for filter:
           do i=1,nlonp4
             f_ik(i,:) = f_kij(:,i,j)
           enddo ! i=1,nlonp4
 !
-! Do the filtering (requires fft):
-          call filter2(f_ik,lev0,lev1,kut(j),j)
+          call ringfilter(f_ik,lev0,lev1,3,name,j)
 !
 ! Return filtered array to f_kij:
           do i=1,nlonp4
@@ -613,14 +681,12 @@
           enddo ! i=1,nlonp4
         enddo latscan ! j=lat0,lat1
       endif ! mytidi==0
-#ifdef MPI
 !
 ! Now leftmost task at each j-row must redistribute filtered data
 ! back to other tasks in the j-row (mytidi>0,mytidj) (includes latitude):
 !
       call mp_scatterlons_f3d(f_kij,lev0,lev1,lon0,lon1,lat0,lat1,1,
      |  name)
-#endif
 !
 ! Return filtered array to fout at current task longitudes:
       do j=lat0,lat1

@@ -92,28 +92,26 @@ COMPILE.f18 = $(FC) $(FFLAGS) $(INCLUDE) -std=f2018 -ffree-form -fall-intrinsics
 COMPILE.f77 = $(FC) $(FFLAGS) $(INCLUDE) -std=legacy -ffixed-form $(WARNINGS) -c -o $@ -J $(MODDIR)
 COMPILE.f90 = $(FC) $(FFLAGS) $(INCLUDE) -std=legacy -ffree-form $(WARNINGS) -c -o $@ -J $(MODDIR)
 
-TGCM_SRCS :=	addfld.F          comp_no.F   gpi.F            mkhvols.F     rgrd1.F \
-		addiag.F          comp_o2o.F  gswm.F           mk_polelat.F  rgrd2.F \
-		advance.F         cons.F      hdif.F           mpi.F         rgrd3.F \
-		advec.F           cpktkm.F    he_coef0_dres.F  mudcom.F      saber_tidi.F \
-		allocdata.F       ctmt.F      he_coef1_dres.F  mud.F         settei.F \
-		amie.F            current.F   he_coefs_sres.F  mudmod.F      smooth.F \
-		amieoutput.F      diags.F     heelis.F         muh2cr.F      soldata.F \
-		apex.F            dispose.F   hist.F           nchist.F      sphpac.F \
-		aurora.F          divrg.F     imf.F            newton.F      swdot.F \
-		bgrd_data.F       dt.F        init.F           numfiles.F    tgcm.F \
-		chapman.F         duv.F       input.F          oplus.F       timing.F \
-		chemrates.F       dynamics.F  input_read.F     output.F      timing_mpi.F \
-		cism_adhoc.F      dyndiag.F   ionvel.F         params.F      trsolv.F \
-		cism_coupling.F   elden.F     lamdas.F         pdynamo.F     util.F \
-		cism_intercomm.F  esmf.F      laplacian.F      qinite.F      vtsetup.F \
-		colath.F          fft9.F      lbc.F            qjion.F       wei05sc.F \
-		comp_ar.F         fields.F    lsqdsq.F         qjnno.F       wrhist.F \
-		comp.F            filter.F    magfield.F       qjoule.F \
-		comp_n2d.F        getapex.F   magpres_g.F      qrj.F \
-		comp_n4s.F        getfile.F   minor.F          rdsource.F
+TGCM_SRCS :=	addfld.F         comp_ar.F   duv.F       hist.F           minor.F       pdynamo.F     soldata.F     \
+		addiag.F         comp.F      dynamics.F  imf.F            mkhvols.F     qinite.F      sphpac.F      \
+		advance.F        comp_n2d.F  dyndiag.F   init.F           mk_polelat.F  qjion.F       swdot.F       \
+		advec.F          comp_n4s.F  elden.F     input.F          mpi.F         qjnno.F       tgcm.F        \
+		allocdata.F      comp_no.F   esmf.F      input_read.F     mudcom.F      qjoule.F      timing.F      \
+		amie.F           comp_o2o.F  fft9.F      ionvel.F         mud.F         qrj.F         timing_mpi.F  \
+		amieoutput.F     cons.F      fields.F    lamdas.F         mudmod.F      rdsource.F    trsolv.F      \
+		aurora.F         cpktkm.F    geopack.F   laplacian.F      muh2cr.F      rgrd1.F       util.F        \
+		bgrd_data.F      ctmt.F      getapex.F   lbc.F            nchist.F      rgrd2.F       vtsetup.F     \
+		calculate_ecf.F  dates.F     getfile.F   lsqdsq.F         newton.F      rgrd3.F       wei05sc.F     \
+		chapman.F        diags.F     gpi.F       mage_coupling.F  numfiles.F    ringfilter.F  wrhist.F      \
+		chemrates.F      dispose.F   gswm.F      mage_oneway.F    oplus.F       saber_tidi.F                \
+		cism_coupling.F  divrg.F     hdif.F      magfield.F       output.F      settei.F                    \
+		colath.F         dt.F        heelis.F    magpres_g.F      params.F      smooth.F
+
+
+TGCM_SRCS_90 := apex.F90 char.F90 current.F90 eclipse.F90  he_coefs.F90  interp.F90  matutil.F90  nudge.F90  subaur.F90
 
 TGCM_OBJS := $(TGCM_SRCS:%.F=$(OBJDIR)/%.o)
+TGCM_OBJS_90 := $(TGCM_SRCS_90:%.F90=$(OBJDIR)/%.o)
 
 BIND_SRC := 	trajectory_data.F90            model_parameters.F90 \
 		assimilate_pdaf.F90            model_parameters_handling.F90 \
@@ -166,19 +164,17 @@ $(TGCM_OBJS) : $(OBJDIR)/%.o: $(TGCM_SRC_DIR)/%.F | objdir moddir
 	$(info $(bold)compile $<$(sgr0))
 	$(COMPILE.f77) $<
 	
-$(OBJDIR)/apex.o: $(TGCM_SRC_DIR)/apex.F
-	$(COMPILE.f90) $<
-	
-$(OBJDIR)/current.o: $(TGCM_SRC_DIR)/current.F
+$(TGCM_OBJS_90):  $(OBJDIR)/%.o: $(TGCM_SRC_DIR)/%.F90 | objdir moddir
+	$(info $(bold)compile $<$(sgr0))
 	$(COMPILE.f90) $<
 
 $(OBJDIR)/util.o: $(TGCM_SRC_DIR)/util.F
 	$(COMPILE.f77) -fallow-invalid-boz -DLINUX $(CPPFLAGS) $(ESMF_F90COMPILEPATHS) $<
 
 
-PROG_DEPS = $(TGCM_OBJS)
+PROG_DEPS = $(TGCM_OBJS) $(TGCM_OBJS_90)
 ifeq ($(WITH_PDAF),TRUE)
-	PROG_DEPS += $(DAIC_OBJS) $(BIND_OBJS)
+	PROG_DEPS += $(BIND_OBJS)
 endif
 
 $(BINDIR)/$(EXE_NAME): $(PROG_DEPS) | bindir

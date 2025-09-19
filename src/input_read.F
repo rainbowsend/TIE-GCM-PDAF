@@ -6,6 +6,7 @@
 !
 ! 06 NOV 2019: replaced MPI_COMM_WORLD with COMM_model
 ! 19 NOV 2021: use Fortran 2008 MPI interface
+! 18 SEP 2025: merged with TIE-GCM 3.0
 ! -----------------------------------------------------------------------------
 !
 ! Namelist read. 
@@ -21,16 +22,18 @@
 !
       use input_module,only: tgcm_input
       use mpi_f08
-      use mpi_module, only: COMM_model
+      use mpi_module, only: TIEGCM_WORLD
       implicit none
       character(len=1024) :: inputfile,line
       integer :: ier,stat
-      
+
       inputfile = ' '
       call getarg(1,inputfile)
       write(6,"(/,'Reading namelist input data from ',a)") 
      |  trim(inputfile)
-      call mpi_bcast(inputfile,1024,MPI_CHARACTER,0,COMM_model,ier)
+
+      call mpi_bcast(inputfile,1024,MPI_CHARACTER,0,TIEGCM_WORLD,ier)
+
       open(10,file=trim(inputfile)) 
 !
 ! Do the namelist read:

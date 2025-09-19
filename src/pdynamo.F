@@ -17,10 +17,12 @@
 !              array to fix  'moved from stack to static storage'
 ! 09 JUL 2024: removed unnecessary save in module variables and declare
 !              pointers contiguous
+! 18 SEP 2025: merged with TIE-GCM 3.0
 ! -----------------------------------------------------------------------------
 !
       use params_module,only: nmlevp1,nmlon,nmlonp1,nlon,nlonp4,nlat,
-     |  nmlat,gmlat,nmlath,nlev,nlevp1,mlev0,mlev1,nmlev_diff,dlat,spval
+     |  nres_grid,nmlat,gmlat,nmlath,nlev,nlevp1,mlev0,mlev1,nmlev_diff,
+     |  dlat,spval
       use addfld_module,only: addfld
       use mpitime_module,only: mpi_timer
       use mpi_module,only: mlat0,mlat1,mlon0,mlon1,lon0,lon1,lat0,lat1,
@@ -28,6 +30,7 @@
       use heelis_module,only: phihm
       use init_module,only: istep
       use input_module,only: current_pg,current_kq
+      use fields_module,only: nsrhs
       implicit none
 !
 ! 3d pointers to fields regridded to magnetic subdomains (i,j,k):
@@ -45,16 +48,13 @@
       real,allocatable,dimension(:,:) ::
      |  zigm11,     ! sigma11*cos(theta0)
      |  zigmc,      ! sigmac
-     |  zigm2,      ! sigma2
      |  zigm22,     ! sigma22/cos(theta0)
      |  rim1,rim2,
      |  rhs,        ! right-hand side
      |  phimsolv,   ! solution direct from solver (nhem only)
-     |  phim2d      ! solution with phihm and both nhem and shem
-#if defined(INTERCOMM) || defined(CISMAH)
-      real,allocatable,dimension(:,:) ::
-     |  zigm1, nsrhs
-#endif
+     |  phim2d,     ! solution with phihm and both nhem and shem
+     |  zigm1,
+     |  zigm2      ! sigma2
 !
 ! 3d potential and electric field on mag subdomains (see sub pthreed):
 ! (mlon0:mlon1,mlat0:mlat1,mlev0:mlev1)
@@ -92,11 +92,7 @@
 !
 ! Global longitude values near mag equator and poles for complete_integrals and rhs.
 ! The nf2d 6 fields are: zigm11,zigm22,zigmc,zigm2,rim1,rim2
-#if defined(INTERCOMM) || defined(CISMAH)
-      integer,parameter :: nf2d=7        ! 7 2d fields for CISM
-#else
-      integer,parameter :: nf2d=6        ! 6 2d fields
-#endif
+      integer,parameter :: nf2d=7        ! 7 2d fields for MAGE
       real :: feq_jpm1(nmlonp1,2,nf2d)   ! 6 fields at 2 lats (eq-1, eq+1)
       real :: fpole_jpm2(nmlonp1,4,nf2d) ! fields at S pole+1,2 and N pole-1,2
 !
@@ -113,15 +109,8 @@
 ! Dimensions of the 5 grid resolutions for the multi-grid PDE:
       integer,parameter ::
      |  nmlon0=nmlon+1,
-     |  nmlat0=(nmlat+1)/2,
-     |  nmlon1=(nmlon0+1)/2,
-     |  nmlat1=(nmlat0+1)/2,
-     |  nmlon2=(nmlon1+1)/2,
-     |  nmlat2=(nmlat1+1)/2,
-     |  nmlon3=(nmlon2+1)/2,
-     |  nmlat3=(nmlat2+1)/2,
-     |  nmlon4=(nmlon3+1)/2,
-     |  nmlat4=(nmlat3+1)/2
+     |  nmlat0=(nmlat+1)/2
+      integer,dimension(nres_grid-1) :: nmlon_mud,nmlat_mud
 !
 ! Unmodified coefficients for using modified mudpack:
       real,dimension(nmlon0,nmlat0,9) :: cofum
@@ -129,9 +118,7 @@
 ! Space needed for descretized coefficients of of dynamo pde at all
 !   5 levels of resolution:
 !
-      integer,parameter ::
-     |  ncee=10*nmlon0*nmlat0+9*(nmlon1*nmlat1+nmlon2*nmlat2+nmlon3*
-     |    nmlat3+nmlon4*nmlat4)
+      integer :: ncee
 !
 ! Coefficients are stored in 1-d array cee(ncee)
 ! cee transmits descretized dynamo PDE coefficients to the multi-grid
@@ -139,18 +126,11 @@
 ! The common block /cee_com/ is retained from earlier versions because
 !   of the equivalencing below of coefficient arrays c0, c1, etc.
 !
-      real :: cee(ncee)
-      common/cee_com/ cee
+      real,dimension(:),allocatable,target :: cee
+!     common/cee_com/ cee
 !
 ! The following parameters nc0,nc1,... are pointers to the beginning of
 !   the coefficients for each level of resolution.
-!
-      integer,parameter ::
-     | nc0=1,
-     | nc1=nc0+10*nmlon0*nmlat0,
-     | nc2=nc1+9 *nmlon1*nmlat1,
-     | nc3=nc2+9 *nmlon2*nmlat2,
-     | nc4=nc3+9 *nmlon3*nmlat3
 !
 ! nc(1:6) are pointers to beginning of coefficient blocks at each of
 !   5 levels of resolution:
@@ -160,21 +140,10 @@
 ! nc(6) = ncee, the dimension of the entire cee array, containing
 !   coefficients for all 5 levels of resolution.
 !
-      integer :: nc(6)
+      integer :: nc(nres_grid+1)
       integer :: mlevtop ! for saving mag fields to sechist
 
-      real ::
-     |  c0(nmlon0,nmlat0,10),
-     |  c1(nmlon1,nmlat1,9),
-     |  c2(nmlon2,nmlat2,9),
-     |  c3(nmlon3,nmlat3,9),
-     |  c4(nmlon4,nmlat4,9)
-      equivalence
-     |  (cee,c0),
-     |  (cee(nc1),c1),
-     |  (cee(nc2),c2),
-     |  (cee(nc3),c3),
-     |  (cee(nc4),c4)
+      real,dimension(:,:,:),pointer :: c0
 
       logical :: debug = .false.
 
@@ -184,7 +153,7 @@
 !-----------------------------------------------------------------------
       subroutine pdynamo
       use mpi_module,only: mytid,mp_scatter_coeffs,mp_scatter_phim,
-     |  mp_mag_halos,mp_gather_pdyn
+     |  mp_mag_halos,mp_gather_pdyn,mp_bcast_real
       use diags_module,only: mkdiag_PHIM2D
 !     use solver_module,only: solve_using_pcg
 !
@@ -206,12 +175,13 @@
 ! (Sub dynamo_inputs has already been called from advance)
 !
 ! Local:
-      integer :: i,j,n,ier,lonend
-      real :: coefglb_rhs(nmlonp1,nmlat)
       real, dimension(:,:,:), allocatable :: coefglb_cofum
-      character(len=16) :: cofum_name
+      real, dimension(:,:), allocatable :: coefglb_rhs
 !
       allocate(coefglb_cofum(nmlonp1,nmlat,9))
+      allocate(coefglb_rhs(nmlonp1,nmlat))
+      coefglb_cofum = 0
+      coefglb_rhs = 0
 !
 ! Latitude index to mag equator (module data)
       jlateq = (nmlat+1)/2   ! index to mag equator (module data)
@@ -265,6 +235,16 @@
         coefglb_rhs  (:,1:nmlath)   = c0(:,:,10)
         coefglb_cofum(:,1:nmlath,:) = cofum(:,:,:)
       endif
+!
+! Pham, 2018
+! This broadcast the new MIX phihm to all processors
+! the MIX phihm was transformed only on root task
+#ifdef GAMERA
+      call mp_bcast_real(phihm,nmlonp1*nmlat,0)
+      call addfld ('PHIHM','REMIX Electric Potential',
+     |    'V',phihm(mlon0:mlon1,mlat0:mlat1),
+     |    'mlon',mlon0,mlon1,'mlat',mlat0,mlat1,0)
+#endif
 !
 ! rim1 after solver is needed for highlat_poten. rim_glb is distributed 
 ! to subdomains as rim1, and mag halos set. This will overwrite rim1 from 
@@ -335,10 +315,8 @@
 
 ! calculate residual on subdomain      .
 !     l2norm = 0.
-!     lonend = mlon1
-!     if (mlon1 == nmlon+1) lonend = mlon1-1     .
 !     do j = mlat0,mlat1
-!       do i = mlon0,lonend
+!       do i = mlon0,mlon1
 !         ressolv(i,j) = coef_rhs(i,j)-ressolv(i,j)
 !         l2norm = l2norm + ressolv(i,j)*ressolv(i,j)	  
 !       enddo
@@ -346,6 +324,7 @@
 !     write(6,*) 'L2norm (task ',mytid,' subdomain) = ',l2norm
 
       deallocate(coefglb_cofum)
+      deallocate(coefglb_rhs)
 
       if (debug) write(6,"('pdynamo returning')")
       end subroutine pdynamo
@@ -356,15 +335,12 @@
 ! Provide needed field inputs to the dynamo by regridding the fields
 ! from geo to mag.
 !
-      use params_module,only: dlev,zpbot_dyn,zibot
-      use cons_module,only: h0,dtr
+      use cons_module,only: h0
       use magfield_module,only: zb,bmod
       use mpi_module,only: mp_mageq,mp_periodic_f3d,mp_periodic_f2d,
      |  mp_magpole_3d
-      use mpi_module,only: tasks,nmagtaski,mytid ! only for check
 
-      use my_esmf,only: 
-     |  geo_src_grid, mag_des_grid, esmf_regrid,
+      use my_esmf,only: esmf_regrid,
      |  esmf_set2d_geo, esmf_get_2dfield,
      |  esmf_set3d_geo, esmf_get_3dfield
 
@@ -379,14 +355,13 @@
      |  mag_je1pg, mag_je2pg, esmf_3dfields
       use my_esmf,only: ! esmf 2d (i,j) fields on mag grid
      |  mag_sini, mag_adota1, mag_adota2, mag_a1dta2, mag_be3
-      use params_module,only: glat,glon
 
       use magpres_g,only: ! (nlevp1,lon0:lon1,lat0:lat1)
      |  je1oD_geo,  ! J_e1(pg)/D [A/cm^2] 
      |  je2oD_geo   ! J_e2(pg)/D [A/cm^2]
 !
 ! Args:
-      integer :: lev0,lev1,lon0,lon1,lat0,lat1,rc,lonbeg,lonend
+      integer :: lev0,lev1,lon0,lon1,lat0,lat1,lonbeg,lonend
       real,dimension(lev0:lev1,lon0:lon1,lat0:lat1),intent(in)::
      |  un,   ! neutral zonal velocity (cm/s)
      |  vn,   ! neutral meridional velocity (cm/s)
@@ -400,7 +375,7 @@
 ! Local:
       integer :: i,j,k
 !
-! 3d locals dimensioned mlev0:mlev1 (mlev0 = -2 at 5-deg, -5 at 2.5-deg)
+! 3d locals dimensioned mlev0:mlev1
       real,dimension(mlev0:mlev1,lon0:lon1,lat0:lat1) ::
      |  undyn,vndyn,wndyn,zpotdyn,peddyn,haldyn
 
@@ -410,7 +385,6 @@
       real,dimension(lon0:lon1,lat0:lat1) :: 
      |  sini,adota1,adota2,a1dta2,be3
       real,dimension(lon0:lon1,lat0:lat1,4) :: f2d
-      real,parameter :: unitvm(nmlon)=1.
 !
 ! Set constants:
 !   rl1,rl2 are rates at which sigma1 and sigma2 decay with height
@@ -435,11 +409,8 @@
 !
 ! mlevtop is for saving mag fields with addfld, see below: 
 !   (actually mlevtop one level below the top):
-!   At 5.0-deg: mlev0,mlev1 = -2,29 mag_field(81,97,mlev0:mlev1)
-!   At 2.5-deg: mlev0,mlev1 = -5,57 mag_field(81,97,mlev0:mlev1)
 !
-      mlevtop = mlev1+2                  ! 5.0-deg (mlev1=57)
-      if (dlat == 2.5) mlevtop = mlev1+5 ! 2.5-deg (mlev1=63)
+      mlevtop = mlev1-mlev0
 !
 ! First, transfer lev0:lev1 (and all geo i,j) from inputs to xxxdyn:
       do j=lat0,lat1
@@ -456,7 +427,6 @@
           enddo ! k=lev0,lev1
 !
 ! Extend neutral atmosphere inputs down to mlev0 (zpbot_dyn=-8.5)
-! At 5-deg res, this will be k=0,-2, and at 2.5-deg res, k=0,-5.
 ! Set three equally spaced levels for Z, take U, V, and W
 ! to be constant, and extrapolate sigmas exponentially.
 !
@@ -573,7 +543,7 @@
       esmf_3dfields(6) = geo_je1pg
       esmf_3dfields(7) = geo_je2pg
 
-      call esmf_set3d_geo(esmf_3dfields,fnames,
+      call esmf_set3d_geo(esmf_3dfields,
      |  f3d,7,mlev0,mlev1,lon0,lon1,lat0,lat1)
 
       geo_ped    = esmf_3dfields(1)
@@ -607,16 +577,11 @@
 ! Set 2d field values on geographic grid:
 ! (esmf fields on source grid exclude periodic points)
 !
-        call esmf_set2d_geo(geo_sini,  geo_src_grid,'SINI    ',
-     |    sini,  lon0,lon1,lat0,lat1)
-        call esmf_set2d_geo(geo_adota1,geo_src_grid,'ADOTA1  ',
-     |    adota1,lon0,lon1,lat0,lat1)
-        call esmf_set2d_geo(geo_adota2,geo_src_grid,'ADOTA2  ',
-     |    adota2,lon0,lon1,lat0,lat1)
-        call esmf_set2d_geo(geo_a1dta2,geo_src_grid,'A1DTA2  ',
-     |    a1dta2,lon0,lon1,lat0,lat1)
-        call esmf_set2d_geo(geo_be3,   geo_src_grid,'BE3     ',
-     |    be3,   lon0,lon1,lat0,lat1)
+        call esmf_set2d_geo(geo_sini,sini,lon0,lon1,lat0,lat1)
+        call esmf_set2d_geo(geo_adota1,adota1,lon0,lon1,lat0,lat1)
+        call esmf_set2d_geo(geo_adota2,adota2,lon0,lon1,lat0,lat1)
+        call esmf_set2d_geo(geo_a1dta2,a1dta2,lon0,lon1,lat0,lat1)
+        call esmf_set2d_geo(geo_be3,be3,lon0,lon1,lat0,lat1)
       endif
 !
 ! Save original fields on geographic grid to secondary histories:
@@ -916,16 +881,15 @@
       end subroutine calc_adotv
 !-----------------------------------------------------------------------
       subroutine fieldline_integrals
-      use cons_module,only: ylatm,r0,h0,re
+      use cons_module,only: ylatm,r0,re
 !
 ! Local:
-      integer :: ier,i,j,k
+      integer :: i,j,k
       real :: sinlm, clm2, absinim, ra, sqomrra, sqrra, afac, htfac
-      real :: rora,del,omdel,sig1,sig2,ue1,ue2,jgr,jmp,fac,je1pg,je2pg
-      real,dimension(mlon0:mlon1) :: sindm, cosdm, ram, aam, cosiam,
-     |  csthdam, rtadram
-      real,dimension(mlon0:mlon1,mlev0:mlev1) :: rrm, sinidm, cosidm,
-     |  costhdm, rtramrm, htfunc, htfunc2, je1pg_diag,je2pg_diag
+      real :: rora,del,omdel,sig1,sig2,ue1,ue2,fac,je1pg,je2pg
+      real,dimension(mlon0:mlon1) :: aam
+      real,dimension(mlon0:mlon1,mlev0:mlev1) ::
+     |  rrm, rtramrm, htfunc, htfunc2, je1pg_diag,je2pg_diag
 !
 ! Initialize coefficients:
       zigm11 = 0.
@@ -934,9 +898,7 @@
       zigmc  = 0.
       rim1   = 0.
       rim2   = 0.
-#if defined(INTERCOMM) || defined(CISMAH)
       zigm1  = 0.
-#endif 
 
       je1pg_diag  = 0.
       je2pg_diag  = 0.
@@ -1058,9 +1020,7 @@
 !
             zigmc(i,j) = zigmc(i,j) + sig1*rtramrm(i,k)*htfunc(i,k)
             zigm2(i,j) = zigm2(i,j) + sig2*rtramrm(i,k)*htfunc(i,k)
-#if defined(INTERCOMM) || defined(CISMAH)
             zigm1(i,j) = zigm1(i,j) + sig1*rtramrm(i,k)*htfunc(i,k)
-#endif
 
 ! 
 ! rim1: int [sigma_p*d_1^2/D u_e2+(sigma_h-(sigma_p*d_1*d_2)/D) u_e1] ds
@@ -1121,9 +1081,7 @@
           zigm22(i,j) = 1.e-2*zigm22(i,j)*aam(i)*adota2_mag(i,j)
           zigmc(i,j)  = 1.e-2*zigmc (i,j)*aam(i)*a1dta2_mag(i,j)
           zigm2(i,j)  = 1.e-2*zigm2 (i,j)*aam(i)
-#if defined(INTERCOMM) || defined(CISMAH)
           zigm1(i,j)  = 1.e-2*zigm1(i,j)*aam(i)
-#endif
           rim1(i,j)   = 1.e-2*rim1(i,j)*aam(i)*be3_mag(i,j)
           rim2(i,j)   = 1.e-2*rim2(i,j)*aam(i)*be3_mag(i,j)
         enddo ! i = 1,nmlon
@@ -1151,6 +1109,8 @@
       end subroutine fieldline_integrals
 !-----------------------------------------------------------------------
       subroutine alloc_pdyn
+
+      use fields_module,only: azigm1,azigm2
 !
 ! Allocate and initialize arrays for parallel dynamo (module data)
 ! (called once per run from allocdata.F)
@@ -1170,6 +1130,9 @@
       allocate(zigmc(mlon00:mlon11,mlat00:mlat11) ,stat=istat)
       if (istat /= 0) call shutdown('alloc_pdyn: zigmc')
       zigmc = 0.
+      allocate(zigm1(mlon00:mlon11,mlat00:mlat11),stat=istat)
+      if (istat /= 0) call shutdown('alloc_pdyn: zigm1')
+      zigm1 = 0.
       allocate(zigm2(mlon00:mlon11,mlat00:mlat11) ,stat=istat)
       if (istat /= 0) call shutdown('alloc_pdyn: zigm2')
       zigm2 = 0.
@@ -1191,14 +1154,15 @@
       allocate(phim2d(mlon00:mlon11,mlat00:mlat11),stat=istat)
       if (istat /= 0) call shutdown('alloc_pdyn: phim2d')
       phim2d = 0.
-#if defined(INTERCOMM) || defined(CISMAH)
-      allocate(zigm1(mlon00:mlon11,mlat00:mlat11),stat=istat)
-      if (istat /= 0) call shutdown('alloc_pdyn: zigm1')
-      zigm1 = 0.
+      allocate(azigm1(mlon00:mlon11,mlat00:mlat11),stat=istat)
+      if (istat /= 0) call shutdown('alloc_pdyn: azigm1')
+      azigm1 = 0.
+      allocate(azigm2(mlon00:mlon11,mlat00:mlat11),stat=istat)
+      if (istat /= 0) call shutdown('alloc_pdyn: azigm2')
+      azigm2 = 0.
       allocate(nsrhs(mlon00:mlon11,mlat00:mlat11),stat=istat)
       if (istat /= 0) call shutdown('alloc_pdyn: nsrhs')
       nsrhs = 0.
-#endif
 !
 ! 3d phim and electric field on mag subdomains:
       allocate(phim3d(mlon0:mlon1,mlat0:mlat1,mlev0:mlev1),stat=istat)
@@ -1284,7 +1248,28 @@
       allocate(ressolv(mlon0:mlon1,mlat0:mlat1),stat=istat)
       if (istat /= 0) call shutdown('alloc_pdyn: ressolv')
       ressolv = 0. 
-        
+!
+! calculate constants
+      nmlon_mud(1) = (nmlon0+1)/2
+      nmlat_mud(1) = (nmlat0+1)/2
+      do n = 2,nres_grid-1
+        nmlon_mud(n) = (nmlon_mud(n-1)+1)/2
+        nmlat_mud(n) = (nmlat_mud(n-1)+1)/2
+      enddo
+!
+      nc(1) = 1
+      nc(2) = nc(1)+10*nmlon0*nmlat0
+      do n = 1,nres_grid-1
+        nc(n+2) = nc(n+1)+9*nmlon_mud(n)*nmlat_mud(n)
+      enddo
+      ncee = nc(nres_grid+1)
+!
+      allocate(cee(ncee),stat=istat)
+      if (istat /= 0) call shutdown('alloc_pdyn: cee')
+      cee = 0.
+!
+      c0(1:nmlon0,1:nmlat0,1:10) => cee(nc(1):nc(2)-1)
+!
       end subroutine alloc_pdyn
 !-----------------------------------------------------------------------
       subroutine complete_integrals
@@ -1301,18 +1286,18 @@
       use cons_module,only: rcos0s,dt1dts
       use mpi_module,only: mp_mageq_jpm1,mp_magpole_2d,mp_mag_foldhem
       use mpi_module,only: mytid
-#if defined(INTERCOMM) || defined(CISMAH)
       use mpi_module,only: mp_mag_halos
-      use cism_coupling_module,only: gzigm1,gzigm2,gnsrhs,cism_ucurrent
+      use fields_module,only: gzigm1,gzigm2,gnsrhs
+      use fields_module,only: azigm1,azigm2
+      use mage_coupling_module,only: mage_ucurrent
       use my_esmf,only: 
      |  mag_zigm1, mag_zigm2, mag_nsrhs,
      |  geo_zigm1, geo_zigm2, geo_nsrhs
-#endif
 
       implicit none
 !
 ! Local:
-      integer :: i,ii,j,ifld,lonend
+      integer :: i,ii,j,lonend
       real :: fmsub(mlon0:mlon1,mlat0:mlat1,nf2d)
       real :: corfac
       real,parameter :: unitvm(nmlon)=1.
@@ -1337,9 +1322,7 @@
       fmsub(:,:,4) = zigm2 (mlon0:mlon1,mlat0:mlat1)
       fmsub(:,:,5) = rim1  (mlon0:mlon1,mlat0:mlat1)
       fmsub(:,:,6) = rim2  (mlon0:mlon1,mlat0:mlat1)
-#if defined(INTERCOMM) || defined(CISMAH)
-      fmsub(:,:,7) = zigm1(mlon0:mlon1,mlat0:mlat1)
-#endif
+      fmsub(:,:,7) = zigm1 (mlon0:mlon1,mlat0:mlat1)
 
       call mp_mageq_jpm1(fmsub,mlon0,mlon1,mlat0,mlat1,nmlonp1,
      |  feq_jpm1,nf2d)
@@ -1380,10 +1363,8 @@
      |                                  feq_jpm1(mlon0:mlon1,2,5))
           rim2  (mlon0:mlon1,j) = .060*(feq_jpm1(mlon0:mlon1,1,6)+
      |                                  feq_jpm1(mlon0:mlon1,2,6))
-#if defined(INTERCOMM) || defined(CISMAH)
           zigm1(mlon0:mlon1,j) = .060*(feq_jpm1(mlon0:mlon1,1,7)+
      |                                  feq_jpm1(mlon0:mlon1,2,7))
-#endif
 
 !
 ! Include the boundary condition at the equator eq.(5.30) in
@@ -1483,9 +1464,7 @@
       fmsub(:,:,4) = zigm2 (mlon0:mlon1,mlat0:mlat1)
       fmsub(:,:,5) = rim1  (mlon0:mlon1,mlat0:mlat1)
       fmsub(:,:,6) = rim2  (mlon0:mlon1,mlat0:mlat1)
-#if defined(INTERCOMM) || defined(CISMAH)
       fmsub(:,:,7) = zigm1 (mlon0:mlon1,mlat0:mlat1)
-#endif
 !
 ! mp_magpole_2d returns fpole_jpm2(nmlonp1,1->4,nf) as:
 !   1: j = 2       (spole+1)
@@ -1539,12 +1518,10 @@
      |      sddot(nmlon,unitvm,fpole_jpm2(1:nmlon,1,4))-
      |      sddot(nmlon,unitvm,fpole_jpm2(1:nmlon,2,4)))/
      |      (3.*float(nmlon))
-#if defined(INTERCOMM) || defined(CISMAH)
           zigm1(mlon0,j) = (4.*
      |      sddot(nmlon,unitvm,fpole_jpm2(1:nmlon,1,7))-
      |      sddot(nmlon,unitvm,fpole_jpm2(1:nmlon,2,7)))/
      |      (3.*float(nmlon))
-#endif
 !
 ! Extend south pole over longitude:
           do i=mlon0+1,mlon1
@@ -1552,9 +1529,7 @@
             zigm22(i,j) = zigm22(mlon0,j)
             zigmc (i,j) = zigmc (mlon0,j)
             zigm2 (i,j) = zigm2 (mlon0,j)
-#if defined(INTERCOMM) || defined(CISMAH)
             zigm1 (i,j) = zigm1 (mlon0,j)
-#endif
           enddo ! i=mlon0,mlon1
 !
 ! RHS vector (I_1,I_2): average over south pole:
@@ -1585,12 +1560,10 @@
      |      sddot(nmlon,unitvm,fpole_jpm2(1:nmlon,3,4))-
      |      sddot(nmlon,unitvm,fpole_jpm2(1:nmlon,4,4)))/
      |      (3.*float(nmlon))
-#if defined(INTERCOMM) || defined(CISMAH)
           zigm1(mlon0,j) = (4.*
      |      sddot(nmlon,unitvm,fpole_jpm2(1:nmlon,3,7))-
      |      sddot(nmlon,unitvm,fpole_jpm2(1:nmlon,4,7)))/
      |      (3.*float(nmlon))
-#endif
 !
 ! Extend north pole over longitude:
           do i=mlon0+1,mlon1
@@ -1598,9 +1571,7 @@
             zigm22(i,j) = zigm22(mlon0,j)
             zigmc (i,j) = zigmc (mlon0,j)
             zigm2 (i,j) = zigm2 (mlon0,j)
-#if defined(INTERCOMM) || defined(CISMAH)
             zigm1 (i,j) = zigm1 (mlon0,j)
-#endif
           enddo ! i=mlon0,mlon1
 !
 ! RHS vector (I_1,I_2): average over north pole:
@@ -1634,31 +1605,32 @@
 !    |  rim2(mlon0:mlon1,mlat0:mlat1),'mlon',mlon0,mlon1,
 !    |  'mlat',mlat0,mlat1,0)
 
-#if defined(INTERCOMM) || defined(CISMAH)
 !
-!
-! Calculate global neutral winds generated current to transfer to CISM M-I couplier
+! Calculate global neutral winds generated current to transfer to MAGE M-I couplier
 !
 
       call mp_mag_halos(rim1,mlon0,mlon1,mlat0,mlat1,1,1)
       call mp_mag_halos(rim2,mlon0,mlon1,mlat0,mlat1,1,1) 
 
-      call cism_ucurrent(rim1,rim2,mlon0,mlon1,mlat0,mlat1,nsrhs)
+      call mage_ucurrent(rim1,rim2,mlon0,mlon1,mlat0,mlat1,nsrhs)
 
-!     call cism_ucurrent
+!     call mage_ucurrent
 !
 ! Transform height-integrated parameters from APEX coordinates to geographic
-! coordinates to be passed to the M-I coupled in the CISM
+! coordinates to be passed to the M-I coupled in the MAGE
 !
 
-      call mag2geo_2d(zigm1(mlon0:mlon1,mlat0:mlat1),gzigm1,mag_zigm1,
-     |     geo_zigm1,'ZIGM1   ')
-      call mag2geo_2d(zigm2(mlon0:mlon1,mlat0:mlat1),gzigm2,mag_zigm2,
-     |     geo_zigm2,'ZIGM2   ')
-      call mag2geo_2d(nsrhs(mlon0:mlon1,mlat0:mlat1),gnsrhs,mag_nsrhs,
-     |     geo_nsrhs,'NSRHS   ')
+      ! This is to grab zigm1 on the APEX grid for coupling before hemispheres are folded
+      azigm1 = zigm1
+      azigm2 = zigm2
 
-#endif
+      call mag2geo_2d(zigm1(mlon0:mlon1,mlat0:mlat1),
+     |     gzigm1(lon0:lon1,lat0:lat1),mag_zigm1,geo_zigm1,'ZIGM1   ')
+      call mag2geo_2d(zigm2(mlon0:mlon1,mlat0:mlat1),
+     |     gzigm2(lon0:lon1,lat0:lat1),mag_zigm2,geo_zigm2,'ZIGM2   ')
+      call mag2geo_2d(nsrhs(mlon0:mlon1,mlat0:mlat1),
+     |     gnsrhs(lon0:lon1,lat0:lat1),mag_nsrhs,geo_nsrhs,'NSRHS   ')
+
 !
 ! Set coefficients for current density calculations.
 ! Note nosocoef is a stub in current.F90 (but not in the
@@ -1679,9 +1651,8 @@
       fmsub(:,:,4) = zigm2 (mlon0:mlon1,mlat0:mlat1)
       fmsub(:,:,5) = rim1  (mlon0:mlon1,mlat0:mlat1)
       fmsub(:,:,6) = rim2  (mlon0:mlon1,mlat0:mlat1)
-#if defined(INTERCOMM) || defined(CISMAH)
       fmsub(:,:,7) = zigm1 (mlon0:mlon1,mlat0:mlat1)
-#endif
+
       call mp_mag_foldhem(fmsub,mlon0,mlon1,mlat0,mlat1,nf2d)
       call mp_mag_periodic_f2d(fmsub,mlon0,mlon1,mlat0,mlat1,nf2d) 
 
@@ -1691,9 +1662,7 @@
       zigm2 (mlon0:mlon1,mlat0:mlat1) = fmsub(:,:,4)
       rim1  (mlon0:mlon1,mlat0:mlat1) = fmsub(:,:,5)
       rim2  (mlon0:mlon1,mlat0:mlat1) = fmsub(:,:,6)
-#if defined(INTERCOMM) || defined(CISMAH)
       zigm1 (mlon0:mlon1,mlat0:mlat1) = fmsub(:,:,7)
-#endif
 !
 ! Reverse sign of zigmc in northern hemisphere.
       do j=mlat0,mlat1
@@ -1738,7 +1707,7 @@
 !   by sub complete_integrals.
 !
 ! Local:
-      integer :: j,i,ii
+      integer :: j,i
       real :: pi
       real,dimension(nmlat) :: tint1
       real,parameter :: unitvm(nmlon)=1.
@@ -1891,10 +1860,12 @@
       integer,parameter :: nf = 7
       real :: fmsub(mlon0:mlon1,mlat0:mlat1,nf)
       real, dimension(:,:,:), allocatable :: fmglb
-      real :: rhs_nhem(nmlonp1,nmlat)
+      real, dimension(:,:), allocatable :: rhs_nhem
       integer :: i,j,jj
 !
       allocate(fmglb(nmlonp1,nmlat,nf))
+      allocate(rhs_nhem(nmlonp1,nmlat))
+
 !
 ! These calls exclude halo points in zigm11, etc.
 !
@@ -1952,6 +1923,7 @@
  
       endif ! mytid==0
       deallocate(fmglb)
+      deallocate(rhs_nhem)
       end subroutine gather_pdyn
 !-----------------------------------------------------------------------
       subroutine productAX(cofum,phi,mlon0,mlon1,mlat0,mlat1,ax)
@@ -2012,11 +1984,6 @@
 ! Both phihm and pfrac have been set by either heelis or weimer.
 ! phihm is on 2d global mag grid, pfrac is in north hemisphere only
 !
-      use input_module,only: iamie
-      use amie_module,only: pcp_nh_amie,pcp_sh_amie
-      use hist_module,only:   modeltime
-      use init_module,only:   iyear
-      use cons_module,only: dlatm,dlonm,pi_dyn,ylatm,rtd,crit
 ! Local:
       logical,parameter :: mod_heelis = .false.   ! true == modified
       integer :: i,j,jn,js
@@ -2064,7 +2031,7 @@
 ! to geographic grid (sub pefield), and calculation of ion drifts 
 ! by sub ionvel.
 !
-      use cons_module,only: ylatm,h0,re,pi_dyn,table,dlatm,dlonm,rcos0s,
+      use cons_module,only: ylatm,re,pi_dyn,table,dlatm,dlonm,rcos0s,
      |  r0,dt1dts,dt0dts
       use mpi_module,only: mp_mageq_jpm3,mp_magpole_2d,mp_mag_jslot,
      |  mp_mag_halos,mp_magpoles
@@ -2098,6 +2065,7 @@
       real :: ed2i0j0,ed2i1j0,ed2i0j1,ed2i1j1
       real :: ephi0j0,ephi1j0,ephi0j1,ephi1j1
       real :: elam0j0,elam1j0,elam0j1,elam1j1
+      real :: fac_elam ! accounts for reference height variation elam_2D
 !
 ! External:
       integer,external :: ixfind
@@ -2417,7 +2385,7 @@
       fmsub1(:,:,4) = ephi
       fmsub1(:,:,5) = elam
       if (debug) write(6,"('pthreed call mp_mag_jslot')")
-      call mp_mag_jslot(fmsub1,mlon00,mlon11,mlat00,mlat11,
+      call mp_mag_jslot(fmsub1,mlon0,mlon1,mlat0,mlat1,
      |  fmneed,jneed,mxneed,5)
       if (debug) write(6,"('pthreed after mp_mag_jslot')")
       phineed = fmneed(:,:,1)
@@ -2443,6 +2411,10 @@
 
             thetam(i)=(re+zpotm3d(i,j,mlev0))/(re+zpotm3d(i,j,k))
             thetam(i) = acos(sqrt(thetam(i))*cosltm*(1.-eps))
+
+! for scaling at height other than the reference height tan(lambda_q)/tan(lambda_m)
+! at pole fac_elam=1
+            fac_elam = tan(ylatm(j))/tan(thetam(i)*sym)
 
             pslot(i) = thetam(i)*180./pi+1.
             islot(i) = pslot(i)
@@ -2540,6 +2512,7 @@
      |        elam0j0 + pslot(i) * elam1j0) + qslot(i)*((1.-pslot(i))*
      |        elam0j1 + pslot(i) * elam1j1)
 
+            elam3d(i,j,k) = elam3d(i,j,k)*fac_elam ! add scaling variation
           enddo ! i=mlon0,mlon1
         enddo ! j=mlat0,mlat1
       enddo ! k=mlev0,mlev1
@@ -2629,6 +2602,12 @@
         call mkdiag_ED12('ED2',ed23d(:,j,mlev0:mlev1-1),
      |    mlon0,mlon1,1,mlevtop,j)
       enddo
+      call addfld('ED12D','ED1 2D',' ',
+     |  ed1(mlon0:mlon1,mlat0:mlat1),
+     |  'mlon',mlon0,mlon1,'mlat',mlat0,mlat1,0)
+      call addfld('ED22D','ED2 2D',' ',
+     |  ed1(mlon0:mlon1,mlat0:mlat1),
+     |  'mlon',mlon0,mlon1,'mlat',mlat0,mlat1,0)
       if (debug) write(6,"('pthreed returning')")
       end subroutine pthreed
 !-----------------------------------------------------------------------
@@ -2640,29 +2619,26 @@
 ! phim3d, otherwise use electric field on mag subdomains from pthreed of 
 ! the previous step.
 !
-      use cons_module,only: dt0dts,dlatm,dlonm,pi,rcos0s,table
-      use mpi_module,only: mp_magpole_3d,mp_mag_halos,mp_magpoles,
-     |  mytid
-      use magfield_module,only: alatm,alonm  ! (nlonp1,0:nlatp1)
+      use cons_module,only: dt0dts,dlatm,dlonm,pi,rcos0s
+      use mpi_module,only: mp_magpole_3d,mp_mag_halos,mp_magpoles
       use my_esmf,only: mag_ephi3d,mag_elam3d,mag_emz3d,
      |                  geo_ephi3d,geo_elam3d,geo_emz3d
       use diags_module,only: mkdiag_EXYZ
       implicit none
 !
 ! Local:
-      integer :: i,ii,j,k,lonbeg,lonend
+      integer :: i,ii,j,k
       real, dimension(:,:,:,:), allocatable :: fpole3d_jpm2 ! global lons at S pole+1,2 and N pole-1,2
-      real :: fpoles(nmlonp1,2,mlev0:mlev1) ! global lons at poles
+      real, dimension(:,:,:), allocatable :: fpoles ! global lons at poles
       real :: phi3d(mlon0-1:mlon1+1,mlat0-1:mlat1+1,mlev0:mlev1)
       real :: csth0
-      integer,dimension(nlonp4) :: islot,jslot
-      real,dimension(nlonp4) :: pslot,qslot,thetam
       real,dimension(lon0:lon1,lat0:lat1,mlev0:mlev1) :: 
      |  exgeo,eygeo,ezgeo
 
       if (debug) write(6,"('Enter pefield: istep=',i3)") istep
 
       allocate(fpole3d_jpm2(nmlonp1,4,mlev0:mlev1,1))
+      allocate(fpoles(nmlonp1,2,mlev0:mlev1))
 
 !     do j=mlat0,mlat1
 !       call addfld('PHIM3D_EFLD',' ','VOLTS',
@@ -2837,6 +2813,7 @@
       enddo
 
       deallocate(fpole3d_jpm2)
+      deallocate(fpoles)
 
       if (debug) write(6,"('pefield returning')")
       end subroutine pefield
@@ -2870,7 +2847,7 @@
       magfields(1) = ESMF_mag
 !
 ! Put fmag into ESMF mag field on mag source grid:
-      call esmf_set3d_mag(magfields,fnames,fmag,1,mlev0,mlev1,
+      call esmf_set3d_mag(magfields,fmag,1,mlev0,mlev1,
      |  mlon0,mlon1,mlat0,mlat1)
 !
 ! Regrid to geographic destination grid, defining ESMF_geo:
@@ -2887,7 +2864,6 @@
       end subroutine mag2geo_3d
 !-----------------------------------------------------------------------
 !
-#if defined(INTERCOMM) || defined(CISMAH)
       subroutine mag2geo_2d(fmag,fgeo,ESMF_mag,ESMF_geo,fname)
 !
 ! Convert field on geomagnetic grid fmag to geographic grid in fgeo.
@@ -2905,15 +2881,14 @@
       integer :: j
       character(len=8) :: fnames(1)
       type(ESMF_Field) :: magfields(1)
-      real,pointer,dimension(:,:) :: fptr
+      real,pointer,contiguous,dimension(:,:) :: fptr
 
       fgeo = 0.
       fnames(1) = fname
       magfields(1) = ESMF_mag
 !
 ! Put fmag into ESMF mag field on mag source grid:
-      call esmf_set2d_mag(magfields,fnames,fmag,1,
-     |  mlon0,mlon1,mlat0,mlat1)
+      call esmf_set2d_mag(magfields,fmag,1,mlon0,mlon1,mlat0,mlat1)
 !
 ! Regrid to geographic destination grid, defining ESMF_geo:
       call esmf_regrid(ESMF_mag,ESMF_geo,'mag2geo',2)
@@ -2927,7 +2902,6 @@
       enddo
 
       end subroutine mag2geo_2d
-#endif
 !-----------------------------------------------------------------------
       subroutine geo2mag_3d(fgeo,fmag,ESMF_geo,ESMF_mag,fname)
 !
@@ -2943,12 +2917,11 @@
       real,intent(out) :: fmag(mlon0:mlon1,mlat0:mlat1,mlev0:mlev1)
 !
 ! Local:
-      integer :: j,k
+      integer :: j
       character(len=8) :: fnames(1)
       type(ESMF_Field) :: geofields(1)
       real,pointer,CONTIGUOUS,dimension(:,:,:) :: fptr
       real :: fgeotmp(mlev0:mlev1,lon0:lon1,lat0:lat1)
-      integer :: lbnd(3),ubnd(3)
 
 !     do j=lat0,lat1
 !       write(6,"('geo2mag_3d: j=',i4,' fgeo(:,lon0:lon1,j)=',
@@ -2973,7 +2946,7 @@
 ! Note esmf_set3d_geo will change dimension order from input 
 !   fgeotmp(k,i,j) to output ESMF_geo(i,j,k).
 !
-      call esmf_set3d_geo(geofields,fnames,fgeotmp,1,mlev0,mlev1,
+      call esmf_set3d_geo(geofields,fgeotmp,1,mlev0,mlev1,
      |  lon0,lon1,lat0,lat1)
 !
 ! Get ESMF_geo and print bounds and min,max of levels 1,nlevp1:
@@ -3005,6 +2978,43 @@
 
       end subroutine geo2mag_3d
 !-----------------------------------------------------------------------
+      subroutine geo2mag_2d(fgeo,fmag,ESMF_geo,ESMF_mag,fname)
+!
+! Convert field on geographic grid fgeo to geomagnetic grid in fmag.
+!
+      use my_esmf,only: esmf_set2d_geo,esmf_regrid,esmf_get_2dfield,
+     |  ESMF_Field
+!
+! Args:
+      character(len=*) :: fname
+      type(ESMF_Field),intent(inout) :: ESMF_geo, ESMF_mag
+      real,intent(in) :: fgeo(lon0:lon1,lat0:lat1)
+      real,intent(out) :: fmag(mlon0:mlon1,mlat0:mlat1)
+!
+! Local:
+      integer :: j
+      type(ESMF_Field) :: geofields
+      real,pointer,contiguous,dimension(:,:) :: fptr
+
+      fmag = 0.
+      geofields = ESMF_geo
+!
+! Put fgeo into ESMF geo field on geo source grid:
+      call esmf_set2d_geo(geofields,fgeo,lon0,lon1,lat0,lat1)
+!
+! Regrid to magnetic destination grid, defining ESMF_mag:
+      call esmf_regrid(ESMF_geo,ESMF_mag,'geo2mag',2)
+!
+! Put regridded mag field into pointer:
+      call esmf_get_2dfield(ESMF_mag,fptr,fname)
+!
+! Transfer from pointer to output arg:
+      do j=mlat0,mlat1
+        fmag(:,j) = fptr(:,j)
+      enddo
+
+      end subroutine geo2mag_2d
+!-----------------------------------------------------------------------
       subroutine prepare_phig3d(wrprim,wrsech)
 !
 ! If its time to write a history, convert phim3d to geographic grid in
@@ -3035,7 +3045,7 @@
 !
       do j=lat0,lat1
         do i=lon0,lon1
-          poten(:,i,j,itc) = phig3d(i,j,:)
+          poten(:,i,j,itc) = phig3d(i,j,1:mlev1)
         enddo
       enddo
 
@@ -3058,25 +3068,11 @@
 ! Args:
       integer,intent(in) :: ixt
 !
-! Local:
-      integer :: j
-!
 ! Define phim3d from poten if doing dynamo:
 ! (poten was read from source history)
 
-!     do j=lat0,lat1
-!       write(6,"('define_phim3d: j=',i4,' poten(:,lon0:lon1,j,ixt)=',
-!    |    2e12.4)") j,minval(poten(:,lon0:lon1,j,ixt)),
-!    |                maxval(poten(:,lon0:lon1,j,ixt))
-!     enddo
-
       call geo2mag_3d(poten(:,lon0:lon1,lat0:lat1,ixt),
      |  phim3d,geo_ped,mag_ped,'PHIG3D  ')
-
-!     do j=mlat0,mlat1
-!       write(6,"('define_phim3d: j=',i3,' phim3d(:,j,:) min,max=',
-!    |    2e12.4)") j,minval(phim3d(:,j,:)),maxval(phim3d(:,j,:))
-!     enddo
 
       end subroutine define_phim3d
 !-----------------------------------------------------------------------
@@ -3091,24 +3087,20 @@
 !-----------------------------------------------------------------------
       subroutine stencils
       use cons_module,only: pi_dyn,dlatm,dlonm
+      use input_module,only: oneway
 !
 ! Locals:
       integer :: i,j,jj,jjj,j0,n,ncc,nmaglon,nmaglat
       real :: sym
       real :: cs(nmlat0)
       real, dimension(:,:,:), allocatable :: c0_plt, cofum_plt
+      real,dimension(:,:,:),pointer :: cp
 !
       allocate(c0_plt(nmlonp1,nmlat,10))
       allocate(cofum_plt(nmlonp1,nmlat,9))
 !
 ! Set index array nc and magnetic latitude cosine array:
 ! nc pointes to the start of the coefficient array for each level
-      nc(1) = nc0
-      nc(2) = nc1
-      nc(3) = nc2
-      nc(4) = nc3
-      nc(5) = nc4
-      nc(6) = ncee
 
       do j=1,nmlat0
         cs(j) = cos(pi_dyn/2.-(nmlat0-j)*dlatm)
@@ -3187,19 +3179,19 @@
 !
 ! Sigma_(phi phi)/( cos(lam_m)*dt0dts*(Delta lon)^2 ) 
       sym = 1.
-      call stencmd(zigm11_glb,cs,nmlon0,nmlat0,sym,cee,1)
+      call stencmd(zigm11_glb,nmlon0,nmlat0,sym,cee,1)
 !
 ! Sigma_(lam lam)*cos(lam_m)*dt0dts/(Delta lam)^2
       sym = 1.
-      call stencmd(zigm22_glb,cs,nmlon0,nmlat0,sym,cee,4)
+      call stencmd(zigm22_glb,nmlon0,nmlat0,sym,cee,4)
 !
 ! Sigma_(phi lam)/( 4*Delta lam* Delta lon )
       sym = -1.
-      call stencmd(zigmc_glb,cs,nmlon0,nmlat0,sym,cee,2)
+      call stencmd(zigmc_glb,nmlon0,nmlat0,sym,cee,2)
 !
 ! Sigma_(lam phi)/( 4*Delta lam* Delta lon )
       sym = -1.
-      call stencmd(zigm2_glb,cs,nmlon0,nmlat0,sym,cee,3)
+      call stencmd(zigm2_glb,nmlon0,nmlat0,sym,cee,3)
 !
 ! Insert RHS in finest stencil (formerly sub rths):
       do j = 1,nmlat0
@@ -3212,34 +3204,38 @@
 !
 ! Set boundary condition at the pole:
       call edges(c0,nmlon0,nmlat0)
-      call edges(c1,nmlon1,nmlat1)
-      call edges(c2,nmlon2,nmlat2)
-      call edges(c3,nmlon3,nmlat3)
-      call edges(c4,nmlon4,nmlat4)
+      do n = 1,nres_grid-1
+        cp(1:nmlon_mud(n),1:nmlat_mud(n),1:9) => cee(nc(n+1):nc(n+2)-1)
+        call edges(cp,nmlon_mud(n),nmlat_mud(n))
+      enddo
       call edges(cofum,nmlon0,nmlat0)
 !
 ! Divide stencils by cos(lam_0) (not rhs):
-      call divide(c0,nmlon0,nmlat0,nmlon0,nmlat0,cs,1)
-      call divide(c1,nmlon1,nmlat1,nmlon0,nmlat0,cs,1)
-      call divide(c2,nmlon2,nmlat2,nmlon0,nmlat0,cs,1)
-      call divide(c3,nmlon3,nmlat3,nmlon0,nmlat0,cs,1)
-      call divide(c4,nmlon4,nmlat4,nmlon0,nmlat0,cs,1)
-      call divide(cofum,nmlon0,nmlat0,nmlon0,nmlat0,cs,0)
+      call divide(c0,nmlon0,nmlat0,nmlon0,cs)
+      do n = 1,nres_grid-1
+        cp(1:nmlon_mud(n),1:nmlat_mud(n),1:9) => cee(nc(n+1):nc(n+2)-1)
+        call divide(cp,nmlon_mud(n),nmlat_mud(n),nmlon0,cs)
+      enddo
+      call divide(cofum,nmlon0,nmlat0,nmlon0,cs)
 !
 ! Set value of solution to 1. at pole:
       do i=1,nmlon0
         c0(i,nmlat0,10) = 1.
       enddo
 !
-#if defined(INTERCOMM) || defined(CISMAH)
+#ifdef GAMERA
 !
-! 3/20/14 btf: cism coupling not yet ready in pdynamo (however,
+! 3/20/14 btf: mage coupling not yet ready in pdynamo (however,
 !   this part will not have to be parallelized, since we are in
 !   global domain here anyway).
 !
-! Convert LFM geographic potential to geomagnetic coordinates
+! Convert GAMERA geographic potential to geomagnetic coordinates
 !
-      call cism_pot2mag
+      if (oneway) then
+        call mage_pot2mag
+      else
+        call mage_mag2mag
+      endif
 c      do jj=1,nmlat
 c       do i=1,nmlonp1
 c        write(6,*)phihm(i,jj),i,jj
@@ -3263,7 +3259,7 @@ c      enddo
       ncc = 1
       nmaglon = nmlon0
       nmaglat = nmlat0
-      do n=1,5
+      do n=1,nres_grid
         call stenmd(nmaglon,nmaglat,cee(ncc),phihm(1,nmlat0),pfrac)
         ncc = ncc+9*nmaglon*nmaglat
         if (n==1) ncc = ncc+nmaglon*nmaglat ! rhs is in 10th slot
@@ -3349,15 +3345,13 @@ c      enddo
 !
 ! Local:
       integer :: nlon,nlat,n,m,i
-      real :: time0,time1
 
-!     if (dynamo_timing) call timer(time0,time1,"clearcee",0,0)
 !
 ! Compute total size of cee
       nlon = nlon0
       nlat = nlat0
       n = 0
-      do m=1,5 ! 5 resolution levels
+      do m=1,nres_grid ! 5 resolution levels
         n = n+nlon*nlat
         nlon = (nlon+1)/2
         nlat = (nlat+1)/2
@@ -3371,7 +3365,7 @@ c      enddo
 
       end subroutine clearcee
 !-----------------------------------------------------------------------
-      subroutine stencmd(zigm,cs,nlon0,nlat0,sym,cee,ncoef)
+      subroutine stencmd(zigm,nlon0,nlat0,sym,cee,ncoef)
 !
 ! Calculate contribution fo 3 by 3 stencil from coefficient zigm
 ! at each grid point and level. 
@@ -3383,15 +3377,17 @@ c      enddo
      |  ncoef  ! integer identifier of coefficient
       real,intent(in) :: 
      |  zigm(nlon0,nlat0), ! coefficients (nlon0+1/2,(nlat0+1)/2) 
-     |  sym,               !  1. if zigm symmetric w.r.t. equator 
+     |  sym                !  1. if zigm symmetric w.r.t. equator 
                            ! -1. for antisymmetry
-     |  cs(nlat0)
       real,intent(inout) :: 
      |  cee(*)  ! output stencil array consisting of c0,c1,c2,c3,c4
 !
 ! Local:
       integer :: nc,nlon,nlat,n
-      real :: wkarray(-15:nmlon0+16,nmlat0)
+      real, dimension(:,:), allocatable :: wkarray
+
+      allocate(wkarray(-2**(nres_grid-1)+1:nmlon0+2**(nres_grid-1),
+     |                 nmlat0))
 !
 ! Perform half-way interpolation and extend zigm in wkarray:
 !
@@ -3405,7 +3401,7 @@ c      enddo
 !
 ! Calculate modified and unmodified stencil on finest grid
 !
-      call cnmmod(nlon0,nlat0,nlon,nlat,cee(nc),ncoef,wkarray,cofum)
+      call cnmmod(nlon0,nlon,nlat,cee(nc),ncoef,wkarray,cofum)
 
 !     if (dynamo_timing) call timer(time0,time1,"stencmd",0,0)
 !
@@ -3414,13 +3410,15 @@ c      enddo
       nlon = (nlon+1)/2
       nlat = (nlat+1)/2
 !
-      do n=2,5
-        call cnm(nlon0,nlat0,nlon,nlat,cee(nc),ncoef,wkarray)
+      do n=2,nres_grid
+        call cnm(nlon0,nlon,nlat,cee(nc),ncoef,wkarray)
         nc = nc+9*nlon*nlat
         if (n==1) nc = nc+nlon*nlat
         nlon = (nlon+1)/2
         nlat = (nlat+1)/2
       enddo ! n=1,5
+
+      deallocate(wkarray)
       end subroutine stencmd
 !-----------------------------------------------------------------------
       subroutine htrpex(coeff,nmlon0,nmlat0,sym,wkarray)
@@ -3431,7 +3429,8 @@ c      enddo
 ! Args:
       integer,intent(in) :: nmlon0,nmlat0
       real,intent(in) :: coeff(nmlon0,nmlat0),sym
-      real,intent(out) :: wkarray(-15:nmlon0+16,nmlat0)
+      real,intent(out) ::
+     |  wkarray(-2**(nres_grid-1)+1:nmlon0+2**(nres_grid-1),nmlat0)
 !
 ! Local:
       integer :: i,j,jj
@@ -3445,7 +3444,7 @@ c      enddo
       enddo ! j=1,nmlat0
 !
 ! Extend over 32 grid spaces to allow for a total of 5 grid levels:
-      do i=1,16
+      do i=1,2**(nres_grid-1)
         do j=1,nmlat0
           wkarray(1-i,j) = wkarray(nmlon0-i,j) 
           wkarray(nmlon0+i,j) = wkarray(1+i,j)
@@ -3453,16 +3452,17 @@ c      enddo
       enddo ! i=1,16
       end subroutine htrpex
 !-----------------------------------------------------------------------
-      subroutine cnm(nlon0,nlat0,nlon,nlat,c,ncoef,wkarray)
+      subroutine cnm(nlon0,nlon,nlat,c,ncoef,wkarray)
 !
 ! Compute contribution to stencil from zigm(ncoef) on grid nlon by nlat,
 ! Finest grid is nlon0 by nlat0.
 !
 ! Args:
       integer,intent(in) :: 
-     |  nlon0,nlat0, ! finest grid dimensions
+     |  nlon0,       ! finest grid dimensions
      |  nlon,nlat    ! output grid dimensions
-      real,intent(in) :: wkarray(-15:nmlon0+16,nmlat0)
+      real,intent(in) ::
+     |  wkarray(-2**(nres_grid-1)+1:nmlon0+2**(nres_grid-1),nmlat0)
 !
 ! ncoef: integer id of coefficient:
 ! ncoef = 1 for zigm11
@@ -3477,9 +3477,7 @@ c      enddo
 !
 ! Local:
       integer :: i,j,nint,i0,j0
-      real,parameter :: pi=3.141592654
       real :: wk(nlon0,3)
-      real :: time0,time1
 
 !     if (dynamo_timing) call timer(time0,time1,"cnm",0,0)
 !
@@ -3597,16 +3595,17 @@ c      enddo
       endif ! ncoef
       end subroutine cnm
 !-----------------------------------------------------------------------
-      subroutine cnmmod(nlon0,nlat0,nlon,nlat,c,ncoef,wkarray,cofum)
+      subroutine cnmmod(nlon0,nlon,nlat,c,ncoef,wkarray,cofum)
 !
 ! Compute contribution to stencil from zigm(ncoef) on grid nlon by nlat,
 ! Finest grid is nlon0 by nlat0.
 !
 ! Args:
       integer,intent(in) :: 
-     |  nlon0,nlat0, ! finest grid dimensions
+     |  nlon0,       ! finest grid dimensions
      |  nlon,nlat    ! output grid dimensions
-      real,intent(in) :: wkarray(-15:nmlon0+16,nmlat0)
+      real,intent(in) ::
+     |  wkarray(-2**(nres_grid-1)+1:nmlon0+2**(nres_grid-1),nmlat0)
       real,dimension(nmlon0,nmlat0,9),intent(inout) :: cofum
 !
 ! ncoef: integer id of coefficient:
@@ -3622,7 +3621,6 @@ c      enddo
 !
 ! Local:
       integer :: i,j,nint,i0,j0
-      real,parameter :: pi=3.141592654
       real :: wk(nlon0,3)
 !
 ! Compute separation of grid points of resolution nlon x nlat within
@@ -3792,12 +3790,10 @@ c      enddo
 !
 ! Called from mudpack solvers to transfer coefficients.
 !
-      save
       integer,intent(in) :: nx,ny
       real,intent(in) :: cee(nx,ny,*)
       real,intent(out) :: cf(nx,ny,*)
       integer :: i,j,n
-      real :: time0,time1
 
       do n = 1,9
         do j = 1,ny
@@ -3831,12 +3827,12 @@ c      enddo
       enddo
       end subroutine edges
 !-----------------------------------------------------------------------
-      subroutine divide(c,nlon,nlat,nlon0,nlat0,cs,igrid)
+      subroutine divide(c,nlon,nlat,nlon0,cs)
 !
 ! Divide stencil C by cos(theta(i,j))
 !
 ! Args:
-      integer,intent(in) :: nlon,nlat,nlon0,nlat0,igrid
+      integer,intent(in) :: nlon,nlat,nlon0
       real,intent(in) :: cs(*)
       real,intent(out) :: c(nlon,nlat,*)
 !
@@ -3951,10 +3947,11 @@ c      enddo
 ! Locals:
       integer :: i,j,jntl,ier,isolve
       real :: l2norm
-      real,dimension(nmlon0,nmlat0)   :: ressolv
+      real,dimension(:,:), allocatable :: ressolv
       real, dimension(:,:,:), allocatable :: cofum_solv
 !
       allocate(cofum_solv(nmlon0,nmlat0,9))
+      allocate(ressolv(nmlon0,nmlat0))
 
 ! Module data:
 ! real,dimension(nmlonp1,nmlat,2) :: rim_glb ! pde solver output
@@ -4004,44 +4001,56 @@ c      enddo
 !     write(6,*) 'L2norm (global root task) = ',l2norm
 
       deallocate(cofum_solv)
+      deallocate(ressolv)
+
       end subroutine solver
 !-----------------------------------------------------------------------
 
-#if defined(INTERCOMM) || defined(CISMAH)
-      subroutine cism_pot2mag
+      subroutine mage_pot2mag
 !
 ! This subroutine converts high latitude potential in geographic coordinate 
-! obtained form the CMIT M-I couplier to geomagnetci coordinate to be used
+! obtained form the MAGE M-I couplier to geomagnetci coordinate to be used
 ! in dynamo calculations
 !
 ! Uses
 !
       use params_module,only: nlonp1
-      use cism_coupling_module, only:gpotm
+      use mage_coupling_module, only:gpotm
       use magfield_module,only: ig,jg,wt
 !
 ! Local:
 !
       integer :: jj
 
-      do jj=mlat0,mlat1
+! Pham, 2018
+! The original transformation did it piecewise.
+! However, this whole subroutine is performed inside of the root task
+! So a change was made such that the root task does the full transform.
+      do jj=1,nmlat
          call geo2mag(phihm(1,jj),gpotm(3:nlonp1+2,:),
-     |        ig,jg,wt,nlonp1,nmlonp1,nmlon,nmlat,jj)
+     |        ig,jg,wt,nlonp1,nmlonp1,nmlat,jj)
          ! Periodic point
          phihm(nmlonp1,jj) = phihm(1,jj)
       enddo
 
-      end subroutine cism_pot2mag
+      end subroutine mage_pot2mag
+
+      subroutine mage_mag2mag
+
+        use mage_coupling_module,  only:apotm
+        phihm = apotm
+
+      end subroutine
 !-----------------------------------------------------------------------
       subroutine geo2mag(fmag,fgeo,long,latg,wght,nlonp1_geo,nlonp1_mag,
-     |  nlon_mag,nlat_mag,lat)
+     |  nlat_mag,lat)
 !
 ! Transform field fgeo on geographic grid to geomagnetic grid using
 !   indices long,latg and weights wght. Return field fmag on magnetic
 !   grid.
 !
 ! Args:
-      integer,intent(in) :: nlonp1_geo,nlonp1_mag,nlon_mag,nlat_mag,lat
+      integer,intent(in) :: nlonp1_geo,nlonp1_mag,nlat_mag,lat
       integer,dimension(nlonp1_mag,nlat_mag),intent(in) :: long,latg
       real,intent(in) :: fgeo(nlonp1_geo,*),wght(4,nlonp1_mag,nlat_mag)
       real,intent(out) :: fmag(nlonp1_mag,*)
@@ -4049,7 +4058,9 @@ c      enddo
 ! Local:
       integer :: i
 !
-      do i=mlon0,mlon1
+! Pham, 2018
+! Loop over entire domain instead of MPI piece.
+      do i=1,nlonp1_mag
         fmag(i,1) =
      |    fgeo(long(i,lat)  ,latg(i,lat)  )*wght(1,i,lat)+
      |    fgeo(long(i,lat)+1,latg(i,lat)  )*wght(2,i,lat)+
@@ -4061,6 +4072,5 @@ c      enddo
 !    |    fgeo(long(i,lat),latg(i,lat)),fmag(i,1)
       enddo
       end subroutine geo2mag
-#endif
 !-----------------------------------------------------------------------
       end module pdynamo_module

@@ -126,7 +126,7 @@
       character(len=*),intent(in) :: diskfile,annotation
 !
 ! Local:
-      integer :: i,iline,istat,iprint=1
+      integer :: iline
       character(len=1020) :: hpss_file,string
       character(len=8) :: opt
       character(len=lenrec) :: hsiput_cmd, annotate_cmd
@@ -178,7 +178,7 @@
 ! single backslash in the hsi script.  xlf90 and PGI compilers require 
 ! escape of the backslash, ifort does not.
 !
-#if defined(AIX) || defined(PGI)
+#if defined (AIX) || defined (PGI)
         annotate_cmd =
      |    trim(annotate_cmd)//' '//'\\"'//trim(annotation)//'\\"'
 #else

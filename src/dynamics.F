@@ -19,29 +19,25 @@
 !          change call to qjoule_tn to include vertical velocity
 !
       use fields_module
-      use params_module,only: dz
-      use mpi_module,only: lon0,lon1,lat0,lat1,mytidi
-#ifdef MPI
-      use mpi_module,only: distribute_1d,mp_close
-#endif
+      use mpi_module,only: lon0,lon1,lat0,lat1,distribute_1d,mp_close,
+     |  mp_polelats_f3d,mp_bndlats_f3d,mp_bndlons_f3d
       use chemrates_module,only: chemrates_tdep
       use qrj_module,only: qrj,qtotal,qop,qo2p,qn2p,qnp,qnop
       use chapman_module,only: chapman
       use oplus_module,only: oplus
-      use input_module,only: iaurora=>aurora,iamie
-      use aurora_module,only: aurora
-      use aurora_module,only: cusp2d,drzl2d,alfa2d,nflx2d,eflux2d
+      use input_module,only: iaurora=>aurora,iamie,nstep_sub
+      use aurora_module,only: aurora,cusp,drizl,alfa,flux,eflux
+      use n2d_module,only: comp_n2d,minor_n2d
       use n4s_module,only: comp_n4s,minor_n4s
       use no_module,only: comp_no,minor_no
       use ar_module,only: comp_ar,minor_ar
-      use hdif_module,only: hdif3,hdif_bndlons,hdif_periodic
+      use hdif_module,only: hdif3,hdif_bndlatlons
       use timing_module,only: timer,timing
       use addfld_module,only: addfld
-      use init_module,only: iyear,secs
-      use hist_module,only: modeltime
       use qjoule,only: qjoule_tn,qjoule_ti
       use diags_module,only: mkdiag_CUSP,mkdiag_DRIZZLE,mkdiag_ALFA,
-     |  mkdiag_NFLUX,mkdiag_EFLUX
+     |  mkdiag_NFLUX,mkdiag_EFLUX,mkdiag_TEC,mkdiag_HNMF2,
+     |  mkdiag_QJOULE_INTEG,mkdiag_UI,mkdiag_VI,mkdiag_WI
       use dyndiag_module,only: dyndiag
 
       implicit none
@@ -56,13 +52,9 @@
 #endif
 !
 ! Local:
-      integer :: i,j,k,n,lat,ier
+      integer :: lat,ier
       integer :: i0,i1,nk,nkm1,nlats,k0,k1
       logical,parameter :: debug=.false.  ! add prints to stdout
-      real,parameter ::
-     |  zpm9  = -9.,        ! zp -9.0 level
-     |  zpm5  = -5.         ! zp -5.0 level
-      integer :: nzpm9m5    ! number of levels from zp -9 to zp -5
 !
 ! If diags is set true, the following fields will be written to
 ! secondary histories:
@@ -77,6 +69,8 @@
 !
       logical,parameter :: diags=.true. ! put fields on sec hist
       real :: time0,time1,time1_qrj,time1_cmpminor,time1_cmpmajor
+      real,dimension(lon0:lon1,lat0:lat1) ::
+     |  tec ! diagnostic total electron content
       logical,external :: time2print
 !
       if (debug) write(6,"(/,'Enter dynamics.')")
@@ -89,14 +83,15 @@
 !
       do lat=lat0,lat1
         call cpktkm(
-     |    tn(levd0,lond0,lat,itp), ! 4d input
-     |    o2(levd0,lond0,lat,itp), ! 4d input
-     |    o1(levd0,lond0,lat,itp), ! 4d input
-     |    n2(levd0,lond0,lat),     ! 3d input
-     |    he(levd0,lond0,lat,itp), ! 4d input
-     |    cp(levd0,lond0,lat),     ! 3d output
-     |    kt(levd0,lond0,lat),     ! 3d output
-     |    km(levd0,lond0,lat),     ! 3d output
+     |    tn(levd0,lond0,lat,itp),  ! 4d input
+     |    o2(levd0,lond0,lat,itp),  ! 4d input
+     |    o1(levd0,lond0,lat,itp),  ! 4d input
+     |    he(levd0,lond0,lat,itp),  ! 4d input
+     |    n2(levd0,lond0,lat),      ! 3d input
+     |    mbar(levd0,lond0,lat,itp),! 4d input
+     |    cp(levd0,lond0,lat),      ! 3d output
+     |    kt(levd0,lond0,lat),      ! 3d output
+     |    km(levd0,lond0,lat),      ! 3d output
      |    1,nlevp1,lon0,lon1,lat)
       enddo ! lat=lat0,lat1
       if (debug) write(6,"('dynamics after cpktkm')")
@@ -136,6 +131,7 @@
      |  ui(levd0,lond0,latd0),     ! U ion velocity output
      |  vi(levd0,lond0,latd0),     ! V ion velocity output
      |  wi(levd0,lond0,latd0),     ! W ion velocity output
+     |  Etot(levd0,lond0,latd0),   ! total eletric field
      |  1,nlevp1,lon0,lon1,lat0,lat1)
       if (debug) write(6,"('dynamics after ionvel')")
 !
@@ -207,6 +203,7 @@
       call vtbegin(122,ier)
 #endif
       time1_qrj = 0.
+!
       do lat=lat0,lat1
 !
 ! Calculate ionization and heating rates:
@@ -224,9 +221,9 @@
      |      no  (levd0,lond0,lat,itp),
      |      o2  (levd0,lond0,lat,itp),
      |      o1  (levd0,lond0,lat,itp),
+     |      he  (levd0,lond0,lat,itp),
      |      n2  (levd0,lond0,lat),
-     |      n4s (levd0,lond0,lat,itp),
-     |      xnmbari(levd0,lond0,lat),
+     |      xnmbari(levd0,lond0,lat,itp),
      |      1,nlevp1,lon0,lon1,lat)
           call timer(time0,time1,'QRJ',1,0) ! end qrj timing for current lat
           time1_qrj = time1_qrj+time1
@@ -251,48 +248,57 @@
         call qinite(
      |    o2     (levd0,lond0,lat,itp),
      |    o1     (levd0,lond0,lat,itp),
+     |    he     (levd0,lond0,lat,itp),
      |    n2     (levd0,lond0,lat),
      |    no     (levd0,lond0,lat,itp),
-     |    xnmbari(levd0,lond0,lat),
+     |    xnmbari(levd0,lond0,lat,itp),
      |    vo2    (levd0,lond0,lat),
      |    vo1    (levd0,lond0,lat),
      |    vn2    (levd0,lond0,lat),
      |    1,nlevp1,lon0,lon1,lat)
         if (debug) write(6,"('dynamics after qinite: lat=',i3)") lat
+      enddo ! lat=lat0,lat1 for qrj, qinite
 !
 ! Add aurora particle precip and ionization:
-        if (iaurora > 0) then
-          call aurora(
-     |      tn  (levd0,lond0,lat,itp),
-     |      o2  (levd0,lond0,lat,itp),
-     |      o1  (levd0,lond0,lat,itp),
-     |      n2  (levd0,lond0,lat),
-     |      barm(levd0,lond0,lat,itp),
-     |      1,nlevp1,lon0,lon1,lat)
-          if (debug) write(6,"('dynamics after aurora: lat=',i3)") lat
-        endif
-      enddo ! lat=lat0,lat1 for qrj, qinite, and aurora
-      if (debug) write(6,"('dynamics after qrj,qinite,aurora')")
+      if (iaurora > 0) then
+        call aurora(
+     |    o2  (levd0,lond0,latd0,itp),
+     |    o1  (levd0,lond0,latd0,itp),
+     |    he  (levd0,lond0,latd0,itp),
+     |    n2  (levd0,lond0,latd0),
+     |    xnmbar(levd0,lond0,latd0,itp),
+     |    scht(levd0,lond0,latd0,itp),
+     |    1,nlevp1,lon0,lon1,lat0,lat1)
+        if (debug) write(6,"('dynamics after aurora')")
 !
 ! Save auroral diagnostics (see diags.F):
 !
-      if (iaurora > 0) then
-        call mkdiag_CUSP('CUSP',cusp2d(lon0:lon1,lat0:lat1),
+        call mkdiag_CUSP('CUSP',cusp(lon0:lon1,lat0:lat1),
      |    lon0,lon1,lat0,lat1)
-        call mkdiag_DRIZZLE('DRIZZLE',drzl2d(lon0:lon1,lat0:lat1),
+        call mkdiag_DRIZZLE('DRIZZLE',drizl(lon0:lon1,lat0:lat1),
      |    lon0,lon1,lat0,lat1)
-        call mkdiag_ALFA('ALFA',alfa2d(lon0:lon1,lat0:lat1),
+        call mkdiag_ALFA('ALFA',alfa(lon0:lon1,lat0:lat1),
      |    lon0,lon1,lat0,lat1)
-        call mkdiag_NFLUX('NFLUX',nflx2d(lon0:lon1,lat0:lat1),
+        call mkdiag_NFLUX('NFLUX',flux(lon0:lon1,lat0:lat1),
      |    lon0,lon1,lat0,lat1)
-        call mkdiag_EFLUX('EFLUX',eflux2d(lon0:lon1,lat0:lat1),
+        call mkdiag_EFLUX('EFLUX',eflux(lon0:lon1,lat0:lat1),
      |    lon0,lon1,lat0,lat1)
+!
       endif
+      if (debug) write(6,"('dynamics after qrj,qinite,aurora')")
 !
 ! Report timing from above latitude loop:
       if (timing%level >= 2.and.time2print(nstep,istep))
      |  write(6,"('Time in QRJ =          ',
      |    f12.2,' Dynamics: step ',i5)") time1_qrj,istep
+!
+! Save ion drifts if requested:
+      call mkdiag_UI('UI_ExB',ui(:,lon0:lon1,lat0:lat1),
+     |  1,nlevp1,lon0,lon1,lat0,lat1)
+      call mkdiag_VI('VI_ExB',vi(:,lon0:lon1,lat0:lat1),
+     |  1,nlevp1,lon0,lon1,lat0,lat1)
+      call mkdiag_WI('WI_ExB',wi(:,lon0:lon1,lat0:lat1),
+     |  1,nlevp1,lon0,lon1,lat0,lat1)
 !
 #ifdef VT
 !     code = 122 ; state = 'ions' ; activity='ModelCode'
@@ -305,30 +311,43 @@
 ! Full task subdomains (including ghost cells) are passed.
 !
       call timer(time0,time1,'OPLUS',0,0) ! start oplus timing
+!
+! Make latitudes j=-1,0 from j=2,1, and j=nlat+1,nlat+2 from nlat-1,nlat for n2, 
+! then define 2d halos points.  Note that mp_geo_halos_f3d and mp_polelats_f3d 
+! do not define "outside corner" halo points, but this should be ok since 
+! cross-derivatives are not performed.
+!
+      call mp_polelats_f3d(n2(:,lon0:lon1,:),   ! 3rd dim is lat0-2:lat1+2
+     |  1,nlevp1,lon0,lon1,lat0,lat1,1,(/1./))  ! last arg means no change in polesign
+      call mp_bndlats_f3d(n2,nk,lon0,lon1,lat0,lat1,1)
+      call mp_bndlons_f3d(n2,nk,lon0,lon1,lat0,lat1,1,0)
+!
       call oplus(
      |  tn    (levd0,lond0,latd0,itp),
      |  te    (levd0,lond0,latd0,itp),
      |  ti    (levd0,lond0,latd0,itp),
      |  o2    (levd0,lond0,latd0,itp),
      |  o1    (levd0,lond0,latd0,itp),
-     |  n2    (levd0,lond0,latd0),
      |  he    (levd0,lond0,latd0,itp),
+     |  n2    (levd0,lond0,latd0),
      |  n2d   (levd0,lond0,latd0,itp),
      |  ne    (levd0,lond0,latd0,itp),
      |  un    (levd0,lond0,latd0,itp),
      |  vn    (levd0,lond0,latd0,itp),
      |  w     (levd0,lond0,latd0,itp),
-     |  barm  (levd0,lond0,latd0,itp),
-     |  ui    ,
-     |  vi    ,
-     |  wi    ,
-     |  xnmbar,
+     |  ui    (levd0,lond0,latd0),
+     |  vi    (levd0,lond0,latd0),
+     |  wi    (levd0,lond0,latd0),
+     |  xnmbar(levd0,lond0,latd0,itp),
+     |  scht  (levd0,lond0,latd0,itp),
      |  op    (levd0,lond0,latd0,itp),
      |  op_nm (levd0,lond0,latd0,itp),
      |  op    (levd0,lond0,latd0,itc), ! out
      |  op_nm (levd0,lond0,latd0,itc), ! out
-     |  xiop2p,                        ! out
-     |  xiop2d,                        ! out
+     |  xiop2p(levd0,lond0,latd0),     ! out
+     |  xiop2d(levd0,lond0,latd0),     ! out
+     |  Fe    (levd0,lond0,latd0),
+     |  Fn    (levd0,lond0,latd0),
      |  1,nlevp1,lon0,lon1,lat0,lat1)
       if (debug) write(6,"('dynamics after oplus')")
       call timer(time0,time1,'OPLUS',1,0) ! end oplus timing
@@ -350,8 +369,7 @@
 !
       do lat=lat0,lat1
         call elden(
-     |    tn    (levd0,lond0,lat,itp),
-     |    barm  (levd0,lond0,lat,itp),
+     |    xnmbar(levd0,lond0,lat,itp),
      |    op    (levd0,lond0,lat,itp), ! O+ at current time step
      |    op    (levd0,lond0,lat,itc), ! O+ updated by sub oplus
      |    o2    (levd0,lond0,lat,itp),
@@ -362,7 +380,6 @@
      |    n4s   (levd0,lond0,lat,itp),
      |    xiop2p(levd0,lond0,lat),      ! from oplus
      |    xiop2d(levd0,lond0,lat),      ! from oplus
-     |    z     (levd0,lond0,lat,itc),  ! updated Z from addiag
      |    nplus (levd0,lond0,lat),      ! N+  output
      |    n2p   (levd0,lond0,lat),      ! N2+ output
      |    nop   (levd0,lond0,lat),      ! NO+ output
@@ -371,6 +388,18 @@
      |    1,nlevp1,lon0,lon1,lat)
       enddo ! lat=lat0,lat1
       if (debug) write(6,"('dynamics after oplus')")
+!
+! Save diagnostic tec (total electron content):
+      call mkdiag_TEC('TEC',tec,z(:,i0:i1,lat0:lat1,itc),
+     |  ne(:,i0:i1,lat0:lat1,itc),k0,k1,i0,i1,lat0,lat1)
+!
+! Save diagnostics hmf2, nmf2:
+      call mkdiag_HNMF2('HMF2',z(:,i0:i1,lat0:lat1,itc),
+     |  ne(:,i0:i1,lat0:lat1,itc),k0,k1,i0,i1,lat0,lat1)
+      call mkdiag_HNMF2('NMF2',z(:,i0:i1,lat0:lat1,itc),
+     |  ne(:,i0:i1,lat0:lat1,itc),k0,k1,i0,i1,lat0,lat1)
+      call mkdiag_HNMF2('FOF2',z(:,i0:i1,lat0:lat1,itc),
+     |  ne(:,i0:i1,lat0:lat1,itc),k0,k1,i0,i1,lat0,lat1)
 !
 ! Ions and electron density are at interface levels (ilev):
       do lat=lat0,lat1
@@ -394,15 +423,19 @@
       do lat=lat0,lat1
         call lamdas(
      |    tn  (levd0,lond0,lat,itp),
-     |    barm(levd0,lond0,lat,itp),
+     |    xnmbar(levd0,lond0,lat,itp),
      |    o2  (levd0,lond0,lat,itp),
      |    o1  (levd0,lond0,lat,itp),
+     |    he  (levd0,lond0,lat,itp),
      |    n2  (levd0,lond0,lat),
      |    ti  (levd0,lond0,lat,itp),
      |    te  (levd0,lond0,lat,itp),
      |    o2p (levd0,lond0,lat,itp),
      |    op  (levd0,lond0,lat,itp),
+     |    nplus(levd0,lond0,lat),
+     |    n2p (levd0,lond0,lat),
      |    nop (levd0,lond0,lat),
+     |    Etot(levd0,lond0,lat),
      |    lxx (levd0,lond0,lat), ! LXX output
      |    lyy (levd0,lond0,lat), ! LYY output
      |    lxy (levd0,lond0,lat), ! LXY output
@@ -410,6 +443,8 @@
      |    lam1(levd0,lond0,lat), ! LAM1 output
      |    ped (levd0,lond0,lat), ! pedersen conductivity output
      |    hall(levd0,lond0,lat), ! hall conductivity output
+     |    Q1  (levd0,lond0,lat), ! electron ohmic heating output
+     |    Q2  (levd0,lond0,lat), ! electrojet turbulent heating output
      |    1,nlevp1,lon0,lon1,lat)
         if (debug) write(6,"('dynamics after lamdas: lat=',i3)") lat
         if (diags) then
@@ -428,24 +463,44 @@
           call addfld('SIGMAHAL','Hall Conductivity','S/m',
      |      hall(:,i0:i1,lat),'lev',k0,k1,'lon',i0,i1,lat)
         endif
+      enddo ! lat=lat0,lat1
 !
-! Calculate n2d:
-        call timer(time0,time1,'CMPMINOR',0,0) ! start comp minor timing
+! Advance n2d:
+!
+      call timer(time0,time1,'CMPMINOR',0,0) ! start comp minor timing
+      do lat=lat0,lat1
         call comp_n2d(
      |    o2  (levd0,lond0,lat,itp),
      |    o1  (levd0,lond0,lat,itp),
      |    no  (levd0,lond0,lat,itp),
-     |    n4s (levd0,lond0,lat,itp),
      |    ne  (levd0,lond0,lat,itp),
      |    op  (levd0,lond0,lat,itp),
      |    n2p (levd0,lond0,lat),
      |    nop (levd0,lond0,lat),
-     |    sco2(levd0,lond0,lat),
-     |    xnmbarm(levd0,lond0,lat),
-     |    n2d (levd0,lond0,lat,itc), ! N2D output
+     |    xnmbar(levd0,lond0,lat,itp),
+     |    xnmbari(levd0,lond0,lat,itp),
      |    1,nlevp1,lon0,lon1,lat)
-        if (debug) write(6,"('dynamics after comp_n2d: lat=',i3)") lat
       enddo ! lat=lat0,lat1
+      if (debug) write(6,"('dynamics after comp_n2d')")
+!
+! Minor_n2d calls sub minor, which has 3d mpi calls, including gather/scatter
+! for fft filtering. Full 3d task subdomains are passed.
+!
+      call minor_n2d(
+     |    tn     (levd0,lond0,latd0,itp),  ! TN (deg K)
+     |    o2     (levd0,lond0,latd0,itp),  ! O2 (mmr)
+     |    o1     (levd0,lond0,latd0,itp),  ! O (mmr)
+     |    he     (levd0,lond0,latd0,itp),  ! HE (mmr)
+     |    mbar   (levd0,lond0,latd0,itp),  ! mean molecular weight
+     |    barm   (levd0,lond0,latd0,itp),  ! mean molecular weight
+     |    xnmbar (levd0,lond0,latd0,itp),  ! p0*e(-z)*mbar/kT
+     |    w      (levd0,lond0,latd0,itc),  ! vertical wind
+     |    n2d    (levd0,lond0,latd0,itp),  ! n2d from previous step
+     |    n2d_nm (levd0,lond0,latd0,itp),  ! n2d at time n-1
+     |    n2d    (levd0,lond0,latd0,itc),  ! output n2d
+     |    n2d_nm (levd0,lond0,latd0,itc),  ! output n2d at time n-1
+     |    1,nlevp1,lon0,lon1,lat0,lat1)
+      if (debug) write(6,"('dynamics after minor_n2d')")
       call timer(time0,time1,'CMPMINOR',1,0) ! suspend comp minor timing
       time1_cmpminor = time1_cmpminor+time1
       if (diags) then
@@ -460,12 +515,11 @@
       call timer(time0,time1,'CMPMINOR',0,0) ! resume comp minor timing
       do lat=lat0,lat1
         call comp_n4s(
-     |    tn     (levd0,lond0,lat,itp),  ! TN (deg K)
      |    o2     (levd0,lond0,lat,itp),  ! O2 (mmr)
      |    o1     (levd0,lond0,lat,itp),  ! O (mmr)
      |    n2     (levd0,lond0,lat),      ! N2 (mmr)
-     |    barm   (levd0,lond0,lat,itp),  ! mean mol weight
-     |    xnmbarm(levd0,lond0,lat),      ! p0*e(-z)*barm
+     |    xnmbar (levd0,lond0,lat,itp),  ! p0*e(-z)*mbar/kT
+     |    xnmbari(levd0,lond0,lat,itp),  ! p0*e(-z)*barm/kT
      |    no     (levd0,lond0,lat,itp),  ! NO
      |    n2d    (levd0,lond0,lat,itc),  ! N(2D) from comp_n2d
      |    ne     (levd0,lond0,lat,itp),  ! Ne
@@ -485,8 +539,11 @@
      |    tn     (levd0,lond0,latd0,itp),  ! TN (deg K)
      |    o2     (levd0,lond0,latd0,itp),  ! O2 (mmr)
      |    o1     (levd0,lond0,latd0,itp),  ! O (mmr)
-     |    n2     (levd0,lond0,latd0),      ! N2 (mmr)
      |    he     (levd0,lond0,latd0,itp),  ! HE (mmr)
+     |    mbar   (levd0,lond0,latd0,itp),  ! mean molecular weight
+     |    barm   (levd0,lond0,latd0,itp),  ! mean molecular weight
+     |    xnmbar (levd0,lond0,latd0,itp),  ! p0*e(-z)*mbar/kT
+     |    w      (levd0,lond0,latd0,itc),  ! vertical wind
      |    n4s    (levd0,lond0,latd0,itp),  ! n4s from previous step
      |    n4s_nm (levd0,lond0,latd0,itp),  ! n4s at time n-1
      |    n4s    (levd0,lond0,latd0,itc),  ! output n4s
@@ -507,15 +564,13 @@
       call timer(time0,time1,'CMPMINOR',0,0) ! resume comp minor timing
       do lat=lat0,lat1
         call comp_no(
-     |    tn     (levd0,lond0,lat,itp),
      |    o2     (levd0,lond0,lat,itp),
      |    o1     (levd0,lond0,lat,itp),
      |    n2     (levd0,lond0,lat),
-     |    barm   (levd0,lond0,lat,itp),
-     |    xnmbarm(levd0,lond0,lat),
+     |    xnmbar (levd0,lond0,lat,itp),
+     |    xnmbari(levd0,lond0,lat,itp),
      |    n4s    (levd0,lond0,lat,itp),
      |    n2d    (levd0,lond0,lat,itc),
-     |    ne     (levd0,lond0,lat,itp),
      |    o2p    (levd0,lond0,lat,itp),
      |    1,nlevp1,lon0,lon1,lat)
       enddo ! lat=lat0,lat1 
@@ -526,8 +581,11 @@
      |    tn   (levd0,lond0,latd0,itp),  ! TN (deg K)
      |    o2   (levd0,lond0,latd0,itp),  ! O2 (mmr)
      |    o1   (levd0,lond0,latd0,itp),  ! O (mmr)
-     |    n2   (levd0,lond0,latd0),      ! N2 (mmr)
      |    he   (levd0,lond0,latd0,itp),  ! HE (mmr)
+     |    mbar (levd0,lond0,latd0,itp),  ! mean molecular weight
+     |    barm (levd0,lond0,latd0,itp),  ! mean molecular weight
+     |    xnmbar(levd0,lond0,latd0,itp), ! p0*e(-z)*mbar/kT
+     |    w    (levd0,lond0,latd0,itc),  ! vertical wind
      |    no   (levd0,lond0,latd0,itp),  ! current no
      |    no_nm(levd0,lond0,latd0,itp),  ! no at time n-1
      |    no   (levd0,lond0,latd0,itc),  ! output no
@@ -550,9 +608,7 @@
 !
       call timer(time0,time1,'CMPMINOR',0,0) ! resume comp minor timing
       do lat=lat0,lat1
-        call comp_ar(
-     |    ar    (levd0,lond0,lat,itp),    ! argon from previous step
-     |    1,nlevp1,lon0,lon1,lat)
+        call comp_ar(lon0,lon1,lat)
         if (debug) write(6,"('dynamics after comp_ar: lat=',i3,
      |    ' istep=',i5)") lat,istep
       enddo ! lat=lat0,lat1
@@ -561,8 +617,11 @@
      |  tn     (levd0,lond0,latd0,itp),   ! tn (deg K)
      |  o2     (levd0,lond0,latd0,itp),   ! o2 (mmr)
      |  o1     (levd0,lond0,latd0,itp),   ! o1 (mmr)
-     |  n2     (levd0,lond0,latd0),       ! n2 (mmr)
      |  he     (levd0,lond0,latd0,itp),   ! he (mmr)
+     |  mbar   (levd0,lond0,latd0,itp),   ! mean molecular weight
+     |  barm   (levd0,lond0,latd0,itp),   ! mean molecular weight
+     |  xnmbar (levd0,lond0,latd0,itp),   ! p0*e(-z)*mbar/kT
+     |  w      (levd0,lond0,latd0,itc),   ! vertical wind
      |  ar     (levd0,lond0,latd0,itp),   ! ar from previous step
      |  ar_nm  (levd0,lond0,latd0,itp),   ! ar at time n-1
      |  ar     (levd0,lond0,latd0,itc),   ! ar output
@@ -588,14 +647,13 @@
 !
       do lat=lat0,lat1
         call qjnno(
-     |    tn   (levd0,lond0,lat,itp),
      |    o2   (levd0,lond0,lat,itp),
      |    o1   (levd0,lond0,lat,itp),
      |    ne   (levd0,lond0,lat,itp),
      |    no   (levd0,lond0,lat,itp),
      |    n4s  (levd0,lond0,lat,itp),
      |    n2d  (levd0,lond0,lat,itc), ! from comp_n2d
-     |    xnmbarm(levd0,lond0,lat),
+     |    xnmbar(levd0,lond0,lat,itp),
      |    1,nlevp1,lon0,lon1,lat)
       enddo
       if (debug) write(6,"('dynamics after qjnno')")
@@ -606,7 +664,6 @@
 !
       do lat=lat0,lat1
         call qjion(
-     |    tn    (levd0,lond0,lat,itp),
      |    o2    (levd0,lond0,lat,itp),
      |    o1    (levd0,lond0,lat,itp),
      |    n2    (levd0,lond0,lat),
@@ -616,7 +673,8 @@
      |    n2d   (levd0,lond0,lat,itp),
      |    no    (levd0,lond0,lat,itp),
      |    ne    (levd0,lond0,lat,itp),
-     |    barm  (levd0,lond0,lat,itp),
+     |    xnmbar(levd0,lond0,lat,itp),
+     |    xnmbari(levd0,lond0,lat,itp),
      |    n2p   (levd0,lond0,lat),     ! from elden
      |    nplus (levd0,lond0,lat),     ! from elden
      |    nop   (levd0,lond0,lat),     ! from elden
@@ -644,10 +702,10 @@
      |    n2p(levd0,lond0,lat),     ! N2+ 1/cm^3
      |    nop(levd0,lond0,lat),     ! NO+  1/cm^3
      |    o2p(levd0,lond0,lat,itp), ! O2+  1/cm^3
-     |    barm(levd0,lond0,lat,itp),! mean molecular weight
-     |    tn  (levd0,lond0,lat,itp),! neutral temperature
+     |    mbar(levd0,lond0,lat,itp),! mean molecular weight
+     |    scht(levd0,lond0,lat,itp),! scale height
      |    qji_ti(levd0,lond0,lat),  ! ion joule heating output
-     |    1,nlevp1,lon0,lon1,lat)
+     |    1,nlevp1,lon0,lon1)
         if (debug) write(6,"('dynamics after qjoule_ti: lat=',i3)")lat
         if (diags) then
           call addfld('QJI_TI','Joule Heating for TI',' ',
@@ -658,15 +716,23 @@
      |    tn  (levd0,lond0,lat,itp),
      |    o2  (levd0,lond0,lat,itp),
      |    o1  (levd0,lond0,lat,itp),
+     |    he  (levd0,lond0,lat,itp),
      |    n2  (levd0,lond0,lat),
      |    ne  (levd0,lond0,lat,itp),
      |    te  (levd0,lond0,lat,itp),
      |    ti  (levd0,lond0,lat,itp),
      |    op  (levd0,lond0,lat,itp),
      |    o2p (levd0,lond0,lat,itp),
+     |    nplus(levd0,lond0,lat),
+     |    n2p (levd0,lond0,lat),
      |    nop (levd0,lond0,lat),
-     |    barm(levd0,lond0,lat,itp),
+     |    xnmbar(levd0,lond0,lat,itp),
+     |    xnmbari(levd0,lond0,lat,itp),
+     |    scht(levd0,lond0,lat,itp),
+     |    schti(levd0,lond0,lat,itp),
      |    qji_ti(levd0,lond0,lat),
+     |    Q1  (levd0,lond0,lat),
+     |    Q2  (levd0,lond0,lat),
      |    te  (levd0,lond0,lat,itc), ! output
      |    ti  (levd0,lond0,lat,itc), ! output
      |    1,nlevp1,lon0,lon1,lat)
@@ -688,6 +754,7 @@
      |    n2  (levd0,lond0,lat),
      |    no  (levd0,lond0,lat,itp), 
      |    barm(levd0,lond0,lat,itp), 
+     |    xnmbar(levd0,lond0,lat,itp),
      |    cp  (levd0,lond0,lat),
      |    cool_implicit(levd0,lond0,lat), ! output implicit cooling
      |    cool_explicit(levd0,lond0,lat), ! output explicit cooling
@@ -701,7 +768,7 @@
      |    cp  (levd0,lond0,lat),
      |    cool_implicit(levd0,lond0,lat), ! output implicit cooling
      |    cool_explicit(levd0,lond0,lat), ! output explicit cooling
-     |    1,nlevp1,lon0,lon1,lat)
+     |    1,nlevp1,lon0,lon1)
         if (debug) write(6,"('dynamics after newto3p: lat=',i3)") lat
       enddo ! lat=lat0,lat1
       if (debug) write(6,"('dynamics after newton,newto3p')")
@@ -714,24 +781,25 @@
         enddo
       endif
 !
-! Calculate horizontal diffusion terms for t,u,v,o2,o1, using
+! Calculate horizontal diffusion terms for t,u,v,o2,o1,he, using
 ! coefficients from hdif2 (hdif2 was called from advance).
 !
-! Make boundary longitudes available for inputs to hdif3:
-      call hdif_bndlons(kldt,kldu,kldv,kldo2,kldo1,kldhe,
+! Make boundary latitudes/longitudes available for inputs to hdif3:
+      call hdif_bndlatlons(kldt,kldu,kldv,kldo2,kldo1,kldhe,
      |    1,nlevp1,lon0,lon1,lat0,lat1)
-      if (debug) write(6,"('dynamics after hdif_bndlons')")
+      if (debug) write(6,"('dynamics after hdif_bndlatlons')")
 !
-! Make hdt,u,v,o2,o1:
+! Make hdt,u,v,o2,o1,he:
       do lat=lat0,lat1
         call hdif3(
      |    cp(levd0,lond0,lat),     ! specific heat input
-     |    kldt ,                   ! 3d input from hdif2 for tn
-     |    kldu ,                   ! 3d input from hdif2 for un
-     |    kldv ,                   ! 3d input from hdif2 for vn
-     |    kldo2,                   ! 3d input from hdif2 for o2
-     |    kldo1,                   ! 3d input from hdif2 for o1
-     |    kldhe,                   ! 3d input from hdif2 for he
+     |    fnrh (levd0,lond0,latd0),! 3d input
+     |    kldt (levd0,lond0,latd0),! 3d input from hdif2 for tn
+     |    kldu (levd0,lond0,latd0),! 3d input from hdif2 for un
+     |    kldv (levd0,lond0,latd0),! 3d input from hdif2 for vn
+     |    kldo2(levd0,lond0,latd0),! 3d input from hdif2 for o2
+     |    kldo1(levd0,lond0,latd0),! 3d input from hdif2 for o1
+     |    kldhe(levd0,lond0,latd0),! 3d input from hdif2 for he
      |    hdt (levd0,lond0,lat),   ! 2d tn output at current lat
      |    hdu (levd0,lond0,lat),   ! 2d un output at current lat
      |    hdv (levd0,lond0,lat),   ! 2d vn output at current lat
@@ -741,11 +809,6 @@
      |    1,nlevp1,lon0,lon1,lat)
       enddo ! lat=lat0,lat1
       if (debug) write(6,"('dynamics after hdif3')")
-!
-! Periodic points for horizontal diffusion terms output from hdif3:
-! This may not be necessary.
-!     call hdif_periodic(hdt,hdu,hdv,hdo2,hdo1,
-!    |    1,nlevp1,lon0,lon1,lat0,lat1)
 !
 ! Calculate joule heating for tn (3d field qji_tn):
       do lat=lat0,lat1
@@ -757,8 +820,7 @@
      |    vi (levd0,lond0,lat),     ! meridional ion velocity input
      |    wi (levd0,lond0,lat),     ! vertical ion velocity input
      |    lam1(levd0,lond0,lat),    ! lambda_1 ion drag coefficient
-     |    barm(levd0,lond0,lat,itp),! mean molecular weight
-     |    tn  (levd0,lond0,lat,itp),! neutral temperature
+     |    scht(levd0,lond0,lat,itp),! scale height
      |    qji_tn(levd0,lond0,lat),  ! ion joule heating output
      |    1,nlevp1,lon0,lon1,lat)
         if (diags) then
@@ -767,6 +829,10 @@
         endif
       enddo ! lat=lat0,lat1
       if (debug) write(6,"('dynamics after qjoule_tn')")
+!
+! Save diagnostic Height-integrated Joule Heating:
+      call mkdiag_QJOULE_INTEG('QJOULE_INTEG',
+     |  qji_tn(:,i0:i1,lat0:lat1),k0,k1,i0,i1,lat0,lat1)
 !
 ! Calculate 2d (lon,lat) diagnostics for amie run:
 !
@@ -793,10 +859,11 @@
      |  tn_nm   (levd0,lond0,latd0,itp),
      |  un	(levd0,lond0,latd0,itp),
      |  vn	(levd0,lond0,latd0,itp),
-     |  o2	(levd0,lond0,latd0,itp),
      |  o1	(levd0,lond0,latd0,itp),
-     |  n2	(levd0,lond0,latd0),
-     |  barm    (levd0,lond0,latd0,itp),  ! mean molecular weight
+     |  mbar  (levd0,lond0,latd0,itp),
+     |  xnmbar(levd0,lond0,latd0,itp),
+     |  scht  (levd0,lond0,latd0,itp),
+     |  schti (levd0,lond0,latd0,itp),
      |  cp	(levd0,lond0,latd0),	  ! specific heat	 (cpktkm.F)
      |  kt	(levd0,lond0,latd0),	  ! molecular diffusion  (cpktkm.F)
      |  km	(levd0,lond0,latd0),	  ! molecular viscosity  (cpktkm.F)
@@ -832,10 +899,9 @@
      |  un_nm (levd0,lond0,latd0,itp), ! zonal velocity at time n-1
      |  vn_nm (levd0,lond0,latd0,itp), ! meridional velocity at time n-1
      |  w     (levd0,lond0,latd0,itc), ! updated vertical velocity (swdot.F)
-     |  o2    (levd0,lond0,latd0,itp), ! molecular oxygen at time n-1
-     |  o1    (levd0,lond0,latd0,itp), ! atomic oxygen at time n-1
-     |  n2    (levd0,lond0,latd0),     ! molecular nitrogen
-     |  barm  (levd0,lond0,latd0,itp), ! mean molecular weight
+     |  mbar  (levd0,lond0,latd0,itp), ! mean molecular weight
+     |  scht  (levd0,lond0,latd0,itp), ! scale height
+     |  schti (levd0,lond0,latd0,itp), ! scale height
      |  z     (levd0,lond0,latd0,itp), ! geopotential height
      |  hdu   (levd0,lond0,latd0),     ! horizontal diffusion of U (hdif3.F)
      |  hdv   (levd0,lond0,latd0),     ! horizontal diffusion of V (hdif3.F)
@@ -846,6 +912,8 @@
      |  lxy   (levd0,lond0,latd0),     ! xy ion drag coefficient
      |  lyx   (levd0,lond0,latd0),     ! yx ion drag coefficient
      |  km    (levd0,lond0,latd0),     ! molecular viscosity  (cpktkm.F)
+     |  Fe    (levd0,lond0,latd0),     ! eastward field-aligned ion drag
+     |  Fn    (levd0,lond0,latd0),     ! northward field-aligned ion drag
      |  un    (levd0,lond0,latd0,itc), ! output updated un
      |  un_nm (levd0,lond0,latd0,itc), ! output updated un at time n-1
      |  vn    (levd0,lond0,latd0,itc), ! output updated vn
@@ -869,12 +937,9 @@
 !
       do lat=lat0,lat1
         call comp_o2o(
-     |    tn   (levd0,lond0,lat,itp), ! neutral temperature
-     |    o2   (levd0,lond0,lat,itp), ! molecular oxygen (mmr)
      |    o1   (levd0,lond0,lat,itp), ! atomic oxygen (mmr)
-     |    n2   (levd0,lond0,lat),     ! molecular nitrogen (mmr)
-     |    he   (levd0,lond0,lat,itp), ! helium (mmr)
-     |    barm (levd0,lond0,lat,itp), ! mean molecular weight
+     |    mbar (levd0,lond0,lat,itp), ! mean molecular weight
+     |    xnmbar(levd0,lond0,lat,itp),! p0*e(-z)*mbar/kT
      |    op   (levd0,lond0,lat,itp), ! O+
      |    no   (levd0,lond0,lat,itp), ! NO
      |    n4s  (levd0,lond0,lat,itp), ! N(4S)
@@ -900,10 +965,9 @@
      |  o1_nm (levd0,lond0,latd0,itp), ! O1 (mmr) at time n-1
      |  he    (levd0,lond0,latd0,itp), ! He (mmr)
      |  he_nm (levd0,lond0,latd0,itp), ! He (mmr) at time n-1
-     |  n2    (levd0,lond0,latd0),     ! N2 (mmr) input
-     |  un    (levd0,lond0,latd0,itp), ! zonal velocity
-     |  vn    (levd0,lond0,latd0,itp), ! meridional velocity
      |  w     (levd0,lond0,latd0,itp), ! vertical velocity
+     |  mbar  (levd0,lond0,latd0,itp), ! mean molecular weight
+     |  xnmbar(levd0,lond0,latd0,itp),
      |  hdo2  (levd0,lond0,latd0),     ! O2 horizontal diffusion (hdif3)
      |  hdo1  (levd0,lond0,latd0),     ! O  horizontal diffusion (hdif3)
      |  hdhe  (levd0,lond0,latd0),     ! He horizontal diffusion (hdif3)

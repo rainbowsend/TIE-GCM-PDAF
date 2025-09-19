@@ -127,19 +127,19 @@
 !     (ting_pot_interp, ting_eng_interp, ting_flux_interp) into one 3d
 !     array and calling MPI_Bcast with count=3*nlat*nlonp1.
       call MPI_Bcast(ting_pot_interp, nlat*nlonp1, MPI_REAL8, 0, 
-     $     COMM_model, iErr)
+     $     TIEGCM_WORLD, iErr)
       if (iErr .ne. 0) then
          call handle_mpi_err(iErr, 'cism_coupling.F: call mpi_bcast')
       endif
 
       call MPI_Bcast(ting_eng_interp, nlat*nlonp1, MPI_REAL8, 0, 
-     $     COMM_model, iErr)
+     $     TIEGCM_WORLD, iErr)
       if (iErr .ne. 0) then
          call handle_mpi_err(iErr, 'cism_coupling.F: call mpi_bcast')
       endif
 
       call MPI_Bcast(ting_flux_interp, nlat*nlonp1, MPI_REAL8, 0, 
-     $     COMM_model, iErr)
+     $     TIEGCM_WORLD, iErr)
       if (iErr .ne. 0) then
          call handle_mpi_err(iErr, 'cism_coupling.F: call mpi_bcast')
       endif

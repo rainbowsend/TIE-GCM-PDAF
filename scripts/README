@@ -1,0 +1,17 @@
+This file: $modeldir/scripts/README
+Information about utilities found in the scripts directory of the model root directory.
+
+Make.intel_ch         Make file for the Intel compiler on the NCAR supercomputer.
+Make.intel_de         Make file for the Intel compiler on the NCAR supercomputer.
+Makefile              Main Makefile for all supported platforms.
+abspath               Utility to obtain full linux paths
+change_nlcomment      Utility to change comment character in namelist input files
+minsperday            Calculates WC minutes per simulated day, given timestep and WC secs/step
+mkdepends             Script to determine dependencies at build time.
+mklogs                Utility to parse the stdout file into log files for each mpi task.
+rmbinchars            Utility to remove binary characters from stdout files.
+tgcm_contents         Utility to determine histories on an output netCDF history file.
+tgcm_put              Utility to store history files on the NCAR hpss.
+tiegcm-ch.job         Default job script for NCAR supercomputer.
+tiegcm-de.job         Default job script for NCAR supercomputer.
+tiegcm_default.inp    Default namelist input file

@@ -1,0 +1,62 @@
+
+Release Notes for tiegcm2.0 ($SVN/tiegcm/tags/tiegcm2.0 in the hao repository)
+Release date:  March, 2016
+
+Source code and data files for version tiegcm2.0 is available at the TGCM download web page
+http://www.hao.ucar.edu/modeling/tgcm/download.php:
+
+Source Code and supporting utilities: tiegcm2.0.tar.gz
+Data for 5.0-degree resolution model: tiegcm2.0_res5.0_data.tar.gz 
+Data for 2.5-degree resolution model: tiegcm2.0_res2.5_data.tar.gz 
+
+--------------------------------------------------------------------------------------
+Primary Modifications:
+
+  2.5-degree horizontal resolution:
+    The model has now been tuned to our satisfaction for community use at the 
+    2.5-degree horizontal resolution (with four grid-points per scale height 
+    in the vertical coordinate). User's are encouraged to run the model at the 
+    2.5-degree resolution, since it provides a more realistic ionosphere than 
+    the 5-degree model. All benchmark runs and source history files are available 
+    at both 5-degree and 2.5-degree resolutions.
+
+  Parallel dynamo: 
+    The electro-dynamo code was parallelized with pure MPI. Transformations between the 
+    geographic and geomagnetic grids in the MPI environment are accomplished with the 
+    Earth System Modeling Framework (ESMF library). This resulted in a performance 
+    speed-up of about 25% at the 5-degree resolution, and almost 50% at the 2.5-degree 
+    resolution when using 64-processors on the NCAR supercomputer system.
+
+  Helium: 
+    Helium is now calculated as a major species at both resolutions.
+    If a source history without helium is used (i.e., versions earlier than v2.0), 
+    helium will be initialized to a global value (0.1154e-5), and will evolve from there. 
+    Helium is always saved on primary histories, and can be saved on secondary histories
+    as 'HE'. Thanks to Eric Sutton for leading this effort.
+
+  Argon: 
+    Argon is now calculated as a minor species. Argon is always saved on primary 
+    histories, and can be saved on secondary histories as 'AR'.
+
+  Additional diagnostics: 
+    Several new diagnostic fields have been added, including N2, ZGMID, CUSP, 
+    DRIZZLE, ALFA, NFLUX, and EFLUX (see src/diags.F, or the User Guide for 
+    more information).
+
+Make/Build System:
+
+  Compilers: 
+    We now support three compilers for Linux desktop systems:
+    Intel, PGI, and GNU gfortran. On the NCAR supercomputer system, only Intel
+    is supported.  Intel is the default compiler on both systems, because it
+    consistently out-performs the other compilers.
+
+  ESMF Library. The parallel dynamo now requires that the ESMF library
+    be linked. See the User's Guide for more information.
+
+Performance:
+
+  Please see doc/perf.table for summary of estimated performance timings
+  including average seconds per step and wallclock minutes per simulated
+  day at default processor counts on linux desktop and NCAR supercomputer
+  systems. The table is also in the User Guide (see index entry "perf.table").

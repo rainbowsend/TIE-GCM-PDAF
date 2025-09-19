@@ -1,5 +1,10 @@
-! AC 11 SEP 2025 Add this explanation
-!
+! -----------------------------------------------------------------------------
+! This file was modified for the integration of the Parallel Data Assimilation
+! Framework (PDAF)
+! Armin Corbin, University of Bonn, Institute for Geodesy and Geoinformation
+!     AC 11 SEP 2025  Added alternative solver using LAPACK
+!     18 SEP 2025: merged with TIE-GCM 3.0
+! -----------------------------------------------------------------------------
 ! A tridiagonal matrix has the form
 !
 !       |  b1 c1            |
@@ -14,8 +19,6 @@
 ! A x = b
 !
 ! and can be solved efficently by Thomas algorithm
-!
-!--------------------------------------------
 !
       subroutine trsolv(a,b,c,f,x,lev0,lev1,k1,k2,lon0,lon1,lonmax,lat,
      |  idebug)

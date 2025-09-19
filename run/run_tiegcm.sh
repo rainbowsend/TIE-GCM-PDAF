@@ -1,7 +1,7 @@
 #!/bin/bash
 
 exec=../bin/tiegcm-pdaf
-npes=12
+npes=4
 tiegcm_nml=../cfg/tiegcm.inp
 pdaf_nml=
 mpiruncmd=mpirun
@@ -12,7 +12,6 @@ debug="file_per_rank"
 exec=$(realpath ${exec})
 tiegcm_nml=$(realpath ${tiegcm_nml})
 pdaf_nml=$(realpath ${pdaf_nml})
-mpiruncmd=$(realpath ${mpiruncmd})
 output=$(realpath ${output})
 
 mkdir -p results

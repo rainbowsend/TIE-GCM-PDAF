@@ -10,60 +10,30 @@
 ! Framework (PDAF)
 ! Armin Corbin, University of Bonn, Institute for Geodesy and Geoinformation
 ! 27 OCT 2021: control resolution via preprocessor LOWRES option
+! 18 SEP 2025: merged with TIE-GCM 3.0
 ! -----------------------------------------------------------------------------
 !
 !------------------------------------
 #ifdef LOWRES
 ! 5.0 degree horizontal:
-!
-! Latitude dimension:
-#define NLAT  (36)
-#define GLAT1 (-87.5)
-#define DLAT  (5.)
-!
-! Longitude dimension:
-#define NLON  (72)
-#define GLON1 (-180.)
-#define DLON  (5.)
+#define DLAT 5.
+#define DLON 5.
+#define GLON1 -180
+#define DLEV .5
+#define ZIBOT -7
+#define ZITOP 7
+#define NRES_GRID 6
 !
 !------------------------------------
 #else
 ! 2.5 degree horizontal:
-!
-! Latitude dimension:
-#define NLAT  (72)
-#define GLAT1 (-88.75)
-#define DLAT  (2.5)
-!
-! Longitude dimension:
-#define NLON  (144)
-#define GLON1 (-180.)
-#define DLON  (2.5)
-!
+#define DLAT 2.5
+#define DLON 2.5
+#define GLON1 -180
+#define DLEV .25
+#define ZIBOT -7
+#define ZITOP 7
+#define NRES_GRID 6
 #endif
 !------------------------------------
-! Vertical column dimension:
-! There are 2 supported vertical resolutions:
-!
-! ZBOT  ZTOP  DZ   NLEV
-! -7     5   0.5    28  "normal resolution" 2 grid points per scale height
-! -7     5   0.25   56  "double resolution" 4 grid points per scale height
-!
-! Define interface and midpoint levels
-!------------------------------------
-#ifdef LOWRES
-! Vertical column -7 to +7 by 0.50 ("normal")
-#define ZIBOT (-7.0)
-#define ZITOP (7.0)
-#define ZMBOT (-6.75)
-#define ZMTOP (7.25)
-#define NLEV (28)
-!------------------------------------
-#else
-! Vertical column -7 to +7 by 0.25 ("double")
-#define ZIBOT (-7.0)
-#define ZITOP (7.0)
-#define ZMBOT (-6.875)
-#define ZMTOP (7.125)
-#define NLEV (56)
-#endif
+

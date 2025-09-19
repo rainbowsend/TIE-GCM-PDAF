@@ -1,5 +1,5 @@
 !
-      subroutine qinite(o2,o1,n2,no,xnmbari,vo2,vo1,vn2,
+      subroutine qinite(o2,o1,he,n2,no,xnmbari,vo2,vo1,vn2,
      |  lev0,lev1,lon0,lon1,lat)
 !
 ! This software is part of the NCAR TIE-GCM.  Use is governed by the 
@@ -14,6 +14,7 @@
 ! Armin Corbin, University of Bonn, Institute for Geodesy and Geoinformation
 !
 ! 23 JUN 2023: check if densities o2i o1i are negative
+! 18 SEP 2025: merged with TIE-GCM 3.0
 ! -----------------------------------------------------------------------------
       use lbc,only: fb,b
       use cons_module,only: rmassinv_o2,rmassinv_o1,rmassinv_n2,
@@ -31,9 +32,9 @@
 ! Args:
       integer,intent(in) :: lev0,lev1,lon0,lon1,lat
       real,dimension(lev0:lev1,lon0-2:lon1+2),intent(in) ::
-     |  o2,o1,n2,no,   ! mass mixing ratios o2,o,n2,no
+     |  o2,o1,he,n2,no,! mass mixing ratios o2,o,he,n2,no
      |  vo2,vo1,vn2,   ! vertical column densities
-     |  xnmbari        ! p0*e(-z)*barm at interfaces
+     |  xnmbari        ! p0*e(-z)*barm/kT at interfaces
 !
 ! VT vampir tracing:
 !
@@ -47,6 +48,7 @@
       real,dimension(lev0:lev1,lon0:lon1) ::
      |  o2i,    ! o2  at interfaces
      |  o1i,    ! o   at interfaces
+     |  hei,    ! he  at interfaces
      |  n2i,    ! n2  at interfaces
      |  tau,    ! 
      |  qbo2,   ! o2 background ionization
@@ -81,11 +83,15 @@
         n2i(k+1,:) = 0.5*(n2(k,lon0:lon1)+n2(k+1,lon0:lon1))
       enddo
 !
-! Bottom boundary for o2i, o1i:
+! Bottom boundary for o2i, o1i, hei:
       do i=lon0,lon1
-        o2i(1,i) = .5*((b(i,1,1)+1.)*o2(1,i)+b(i,1,2)*o1(1,i)+fb(i,1))
-        o1i(1,i) = .5*(b(i,2,1)*o2(1,i)+(b(i,2,2)+1.)*o1(1,i)+fb(i,2))
-! 23.7.23 AC prevent negative o2i and o1i
+        o2i(1,i) = .5*((b(1,1)+1.)*o2(1,i)+b(1,2)*o1(1,i)+
+     |    b(1,3)*he(1,i)+fb(1))
+        o1i(1,i) = .5*(b(2,1)*o2(1,i)+(b(2,2)+1.)*o1(1,i)+
+     |    b(2,3)*he(1,i)+fb(2))
+        hei(1,i) = .5*(b(3,1)*o2(1,i)+b(3,2)*o1(1,i)+
+     |    (b(3,3)+1.)*he(1,i)+fb(3))
+! AC prevent negative o2i and o1i hei
       if (o2i(1,i) < 0) then
         write(*,*) 'WARNING o2i(1',i,') is negative.'
         o2i(1,i) = 1E-12
@@ -94,19 +100,16 @@
         write(*,*) 'WARNING o1i(1',i,') is negative.'
         o1i(1,i) = 1E-12
       end if
+      if (hei(1,i) < 0) then
+        write(*,*) 'WARNING hei(1',i,') is negative.'
+        hei(1,i) = 1E-12
+      end if
 !
 ! btf tiegcm_he 8/21/13: Not sure about n2i bottom boundary. 
-! For now, use 1-o2i-o1i since helium is negligible at this height.
+! For now, use 1-o2i-o1i-hei.
 !
-        n2i(1,i) = 1.-o2i(1,i)-o1i(1,i)
+        n2i(1,i) = 1.-o2i(1,i)-o1i(1,i)-hei(1,i)
       enddo
-!
-! n2 at interfaces:
-      do k=lev0,lev1
-        do i=lon0,lon1                       !!! temporal fix CISM
-         if(n2i(k,i)<=0.)n2i(k,i)=1.e-5      !!! temporal fix CISM
-        enddo                                !!! temporal fix CISM
-      enddo 
 !
 ! Summation over wavelength:
       qbo2 = 0. ! array init

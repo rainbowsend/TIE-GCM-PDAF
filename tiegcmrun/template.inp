@@ -1,0 +1,238 @@
+&tgcm_input
+!
+! Namelist input file for run {{inp.LABEL}}
+!
+{%- if inp.LABEL is not none %}
+LABEL = '{{inp.LABEL}}'{%- endif %}
+
+! Source Information
+{%- if inp.SOURCE is not none %}
+SOURCE = '{{inp.SOURCE}}'{%- endif %}
+{%- if inp.SOURCE_START is not none %}
+SOURCE_START = {{inp.SOURCE_START}}{%- endif %}
+
+! Model Information
+{%- if inp.START_YEAR is not none %}
+START_YEAR = {{inp.START_YEAR}}{%- endif %}
+{%- if inp.START_DAY is not none %}
+START_DAY = {{inp.START_DAY}}{%- endif %}
+{%- if inp.CALENDAR_ADVANCE is not none %}
+CALENDAR_ADVANCE = {{inp.CALENDAR_ADVANCE}}{%- endif %}
+{%- if inp.STEP is not none %}
+STEP = {{inp.STEP}}{%- endif %}
+{%- if inp.NSTEP_SUB is not none %}
+NSTEP_SUB = {{inp.NSTEP_SUB}}{%- endif %}
+
+! Primary File Information
+{%- if inp.PRISTART is not none %}
+PRISTART = {{inp.PRISTART}}{%- endif %}
+{%- if inp.PRISTOP is not none %}
+PRISTOP = {{inp.PRISTOP}}{%- endif %}
+{%- if inp.PRIHIST is not none %}
+PRIHIST = {{inp.PRIHIST}}{%- endif %}
+{%- if inp.OUTPUT is not none %}
+OUTPUT = {{inp.OUTPUT}}{%- endif %}
+{%- if inp.MXHIST_PRIM is not none %}
+MXHIST_PRIM = {{inp.MXHIST_PRIM}}{%- endif %}
+
+! Secondary File Information
+{%- if inp.SECSTART is not none %}
+SECSTART = {{inp.SECSTART}}{%- endif %}
+{%- if inp.SECSTOP is not none %}
+SECSTOP = {{inp.SECSTOP}}{%- endif %}
+{%- if inp.SECHIST is not none %}
+SECHIST = {{inp.SECHIST}}{%- endif %}
+{%- if inp.SECOUT is not none %}
+SECOUT = {{inp.SECOUT}}{%- endif %}
+{%- if inp.MXHIST_SECH is not none %}
+MXHIST_SECH = {{inp.MXHIST_SECH}}{%- endif %}
+
+! Secondary Output Fields
+{%- if inp.SECFLDS|select('ne', None)|list|length > 0 %}
+SECFLDS = {% for SECFLD in inp.SECFLDS %}{% if SECFLD %}'{{SECFLD}}'{% if not loop.last %}, {% endif %}{% endif %}{% endfor %}
+{%- endif %}
+
+! Electron Heating
+{%- if inp.ELECTRON_HEATING is not none %}
+ELECTRON_HEATING = {{inp.ELECTRON_HEATING}}{%- endif %}
+
+! Potential Model 
+{%- if inp.POTENTIAL_MODEL is not none %}
+POTENTIAL_MODEL = '{{inp.POTENTIAL_MODEL}}'{%- endif %}
+
+! Coupling
+{%- if inp.ONEWAY is true %}
+ONEWAY = .true.
+{%- elif inp.ONEWAY is false %}
+ONEWAY = .false.
+{%- endif %}
+
+! GPI File
+{%- if inp.GPI_NCFILE is not none %}
+GPI_NCFILE = '{{inp.GPI_NCFILE}}'{%- endif %}
+
+! IMF File 
+{%- if inp.IMF_NCFILE is not none %}
+IMF_NCFILE = '{{inp.IMF_NCFILE}}'{%- endif %}
+
+! KP index or POWER & CTPOTEN Information  
+{%- if inp.KP is not none %}
+KP = {{inp.KP}}{%- endif %}
+{%- if inp.POWER is not none %}
+POWER = {{inp.POWER}}{%- endif %}
+{%- if inp.CTPOTEN is not none %}
+CTPOTEN = {{inp.CTPOTEN}}{%- endif %}
+
+! IMF & Solar Wind Information 
+{%- if inp.BXIMF is not none %}
+BXIMF = {{inp.BXIMF}}{%- endif %}
+{%- if inp.BYIMF is not none %}
+BYIMF = {{inp.BYIMF}}{%- endif %}
+{%- if inp.BZIMF is not none %}
+BZIMF = {{inp.BZIMF}}{%- endif %}
+{%- if inp.SWDEN is not none %}
+SWDEN = {{inp.SWDEN}}{%- endif %}
+{%- if inp.SWVEL is not none %}
+SWVEL = {{inp.SWVEL}}{%- endif %}
+
+! F107 Information 
+{%- if inp.F107 is not none %}
+F107 = {{inp.F107}}{%- endif %}
+{%- if inp.F107A is not none %}
+F107A = {{inp.F107A}}{%- endif %}
+
+! Eclipse Mask
+{%- if inp.DOECLIPSE is true %}
+DOECLIPSE = .true.
+{%- elif inp.DOECLIPSE is false %}
+DOECLIPSE = .false.
+{%- endif %}
+{%- if inp.ECLIPSE_LIST is not none %}
+ECLIPSE_LIST = {{inp.ECLIPSE_LIST}}{%- endif %}
+
+! Flags
+{%- if inp.AURORA is not none %}
+AURORA = {{inp.AURORA}}{%- endif %}
+{%- if inp.DYNAMO is not none %}
+DYNAMO = {{inp.DYNAMO}}{%- endif %}
+{%- if inp.CALC_HELIUM is not none %}
+CALC_HELIUM = {{inp.CALC_HELIUM}}{%- endif %}
+{%- if inp.EDDY_DIF is not none %}
+EDDY_DIF = {{inp.EDDY_DIF}}{%- endif %}
+{%- if inp.JOULEFAC is not none %}
+JOULEFAC = {{inp.JOULEFAC}}{%- endif %}
+{%- if inp.COLFAC is not none %}
+COLFAC = {{inp.COLFAC}}{%- endif %}
+{%- if inp.OPDIFFCAP is not none %}
+OPDIFFCAP = {{inp.OPDIFFCAP}}{%- endif %}
+{%- if inp.OPDIFFRATE is not none %}
+OPDIFFRATE = {{inp.OPDIFFRATE}}{%- endif %}
+{%- if inp.OPDIFFLEV is not none %}
+OPDIFFLEV = {{inp.OPDIFFLEV}}{%- endif %}
+{%- if inp.OPFLOOR is not none %}
+OPFLOOR = {{inp.OPFLOOR}}{%- endif %}
+{%- if inp.OPRATE is not none %}
+OPRATE = {{inp.OPRATE}}{%- endif %}
+{%- if inp.OPLEV is not none %}
+OPLEV = {{inp.OPLEV}}{%- endif %}
+{%- if inp.OPLATWIDTH is not none %}
+OPLATWIDTH = {{inp.OPLATWIDTH}}{%- endif %}
+{%- if inp.TE_CAP is not none %}
+TE_CAP = {{inp.TE_CAP}}{%- endif %}
+{%- if inp.TI_CAP is not none %}
+TI_CAP = {{inp.TI_CAP}}{%- endif %}
+{%- if inp.CURRENT_PG is not none %}
+CURRENT_PG = {{inp.CURRENT_PG}}{%- endif %}
+{%- if inp.CURRENT_KQ is not none %}
+CURRENT_KQ = {{inp.CURRENT_KQ}}{%- endif %}
+{%- if inp.ET is true %}
+ET = .true.
+{%- elif inp.ET is false %}
+ET = .false.
+{%- endif %}
+{%- if inp.SAPS is true %}
+SAPS = .true.
+{%- elif inp.SAPS is false %}
+SAPS = .false.
+{%- endif %}
+
+! GSWM Data
+{%- if inp.GSWM_MI_DI_NCFILE is not none %}
+GSWM_MI_DI_NCFILE = '{{inp.GSWM_MI_DI_NCFILE}}'{%- endif %}
+{%- if inp.GSWM_MI_SDI_NCFILE is not none %}
+GSWM_MI_SDI_NCFILE = '{{inp.GSWM_MI_SDI_NCFILE}}'{%- endif %}
+{%- if inp.GSWM_NM_DI_NCFILE is not none %}
+GSWM_NM_DI_NCFILE = '{{inp.GSWM_NM_DI_NCFILE}}'{%- endif %}
+{%- if inp.GSWM_NM_SDI_NCFILE is not none %}
+GSWM_NM_SDI_NCFILE = '{{inp.GSWM_NM_SDI_NCFILE}}'{%- endif %}
+
+! HE Coefs Data
+{%- if inp.HE_COEFS_NCFILE is not none %}
+HE_COEFS_NCFILE = '{{inp.HE_COEFS_NCFILE}}'{%- endif %}
+
+! AMIE
+{%- if inp.AMIENH is not none %}
+AMIENH = '{{inp.AMIENH}}'{%- endif %}
+{%- if inp.AMIESH is not none %}
+AMIESH = '{{inp.AMIESH}}'{%- endif %}
+
+! Tide
+{%- if inp.TIDI_NCFILE is not none %}
+TIDI_NCFILE = '{{inp.TIDI_NCFILE}}'{%- endif %}
+{%- if inp.TIDE is not none %}
+TIDE = '{{inp.TIDE}}'{%- endif %}
+{%- if inp.TIDE2 is not none %}
+TIDE2 = '{{inp.TIDE2}}'{%- endif %}
+
+! Support Files 
+{%- if inp.BGRDDATA_NCFILE is not none %}
+BGRDDATA_NCFILE = '{{inp.BGRDDATA_NCFILE}}'{%- endif %}
+{%- if inp.CTMT_NCFILE is not none %}
+CTMT_NCFILE = '{{inp.CTMT_NCFILE}}'{%- endif %}
+{%- if inp.SABER_NCFILE is not none %}
+SABER_NCFILE = '{{inp.SABER_NCFILE}}'{%- endif %}
+{%- if inp.MIXFILE is not none %}
+MIXFILE = {{inp.MIXFILE}}{%- endif %}
+
+! NUGE
+{%- if inp.NUDGE_NCPRE is not none %}
+NUDGE_NCPRE = '{{inp.NUDGE_NCPRE}}'{%- endif %}
+{%- if inp.NUDGE_NCPOST is not none %}
+NUDGE_NCPOST = '{{inp.NUDGE_NCPOST}}'{%- endif %}
+{%- if inp.NUDGE_NCFILE is not none %}
+NUDGE_NCFILE = '{{inp.NUDGE_NCFILE}}'{%- endif %}
+{%- if inp.NUDGE_FLDS is not none %}
+NUDGE_FLDS = '{{inp.NUDGE_FLDS}}'{%- endif %}
+{%- if inp.NUDGE_LBC is true %}
+NUDGE_LBC = .true.
+{%- elif inp.NUDGE_LBC is false %}
+NUDGE_LBC = .false.
+{%- endif %}
+{%- if inp.NUDGE_F4D is true %}
+NUDGE_F4D = .true.
+{%- elif inp.NUDGE_F4D is false %}
+NUDGE_F4D = .false.
+{%- endif %}
+{%- if inp.NUDGE_USE_REFDATE is true %}
+NUDGE_USE_REFDATE = .true.
+{%- elif inp.NUDGE_USE_REFDATE is false %}
+NUDGE_USE_REFDATE = .false.
+{%- endif %}
+{%- if inp.NUDGE_REFDATE is not none %}
+NUDGE_REFDATE = '{{inp.NUDGE_REFDATE}}'{%- endif %}
+{%- if inp.NUDGE_SPONGE is not none %}
+NUDGE_SPONGE = '{{inp.NUDGE_SPONGE}}'{%- endif %}
+{%- if inp.NUDGE_DELTA is not none %}
+NUDGE_DELTA = '{{inp.NUDGE_DELTA}}'{%- endif %}
+{%- if inp.NUDGE_POWER is not none %}
+NUDGE_POWER = '{{inp.NUDGE_POWER}}'{%- endif %}
+{%- if inp.NUDGE_ALPHA is not none %}
+NUDGE_ALPHA = '{{inp.NUDGE_ALPHA}}'{%- endif %}
+
+! Other Parameters
+{%- for data in inp.other_input %}
+{%- if data != None %}
+{{data}}
+{%- endif %}
+{%- endfor %}
+/

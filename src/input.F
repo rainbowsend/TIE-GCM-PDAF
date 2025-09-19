@@ -1,4 +1,3 @@
-#include <defs.h>
 !
       module input_module
 !
@@ -19,11 +18,12 @@
 ! 13 SEP 2022: replaced Nonconforming tab character
 ! 28 OCT 2022: added wei05sc_ncfile to namelist file
 ! 07 JUL 2023: allocate 'hvols' array to fix  'moved from stack to static storage'
+! 18 SEP 2025: merged with TIE-GCM 3.0
 ! -----------------------------------------------------------------------------
 !
       use params_module,only: mxhvols,mxseries,mxseries_sech,mxfsech,
      |  nlat,nlon,nlev,glat1,dlat,glon1,dlon,tgcm_version,tgcm_name,
-     |  spval,ispval,nlonp4,mxind_time,nmlat,nmlonp1
+     |  spval,ispval,nlonp4,mxind_time,nmlat,nmlonp1,rp
       use mk_hvols,only: mkhvols
       implicit none
 !
@@ -47,9 +47,11 @@
 !       to the input values. These may be referenced from included
 !       header files or other modules).
 !
+      integer,parameter :: mxlen_filename=1024
+!
 ! Namelist user input variables:
 !
-      character(len=1024) :: 
+      character(len=mxlen_filename) :: 
      |  label,           ! optional generic text label for this run
      |  amievol,         ! absolute or relative path to amie data file (optional)
      |  amiesh,          ! file or mss path of amie SH data file (optional)
@@ -62,7 +64,8 @@
      |  calendar_advance,! if > 0, advance calendar day from start_day
      |  mxday,           ! calendar day (0-mxday)
      |  step,            ! model time step (integer seconds)
-     |  eddy_dif,        ! 0/1 flag for DOY dependent eddy diffusion (difk, dift, xmue)
+     |  nstep_sub,       ! number of O+ sub-cyling per model time step
+     |  eddy_dif,	       ! 0/1 flag for DOY dependent eddy diffusion (difk, dift, xmue)
      |  dynamo,          ! 0/1 flag for dynamo
      |  current_pg,      ! 0/1 flag to add current due to plasma pressure and gravity to rhs (default 1)
      |  current_kq,      ! 0/1 flag to calculate height-integrated current density (default 0)
@@ -74,8 +77,8 @@
      |  ntask_maglat,    ! number of tasks in mag latitude  dimension (not namelist)
      |  ntask_maglon,    ! number of tasks in mag longitude dimension (not namelist)
      |  calc_helium,     ! calculate helium if calc_helium=1, otherwise set he=0.
-     |  enforce_opfloor  ! if > 0, enforce O+ floor (see oplus.F)
-      real ::
+     |  electron_heating
+      real(rp) ::
      |  tide(10),        ! semidiurnal tide amplitudes and phases
      |  tide2(2),        ! diurnal tide amplitude and phase
      |  tide3m3(2),      ! 2-day wave amplitude and phase
@@ -83,10 +86,17 @@
      |  f107a,           ! 10.7 cm average (81-day) solar flux
      |  colfac,          ! collision factor
      |  joulefac,        ! joule heating factor (see sub qjoule_tn (qjoule.F))
-     |  opdiffcap        ! Maximum O+ diffusion (see sub rrk in oplus.F)
+     |  opdiffcap,       ! Maximum O+ diffusion (see sub rrk in oplus.F)
+     |  opdiffrate,      ! vertical decaying rate of O+ diffusion cap
+     |  opdifflev,       ! transition altitude of O+ diffusion cap
+     |  opfloor,         ! minimum O+
+     |  oprate,          ! vertical decaying rate of O+ floor
+     |  oplev,           ! transition altitude of O+ floor
+     |  oplatwidth,      ! latitude band to apply O+ floor
+     |  te_cap,ti_cap
 !
 ! Input parameters that can be either constant or time-dependent:
-      real ::
+      real(rp) ::
      |  power,           ! hemispheric power (gw) (hpower on histories)
      |  ctpoten,         ! cross-cap potential (volts)
      |  bximf,           ! BX component of IMF
@@ -96,18 +106,24 @@
      |  swden,           ! Solar wind density in #/cm3
      |  al,              ! AL lower magnetic auroral activity index in nT
      |  kp               ! Kp index
-      real,dimension(4,mxind_time) :: power_time,ctpoten_time,
+      real(rp),dimension(5,mxind_time) :: power_time,ctpoten_time,
      |  bximf_time,byimf_time,bzimf_time,swvel_time,swden_time,al_time,
      |  kp_time,f107_time,f107a_time
       integer :: 
      |  ntimes_ctpoten,ntimes_power,ntimes_bximf,ntimes_byimf,
      |  ntimes_bzimf,ntimes_swden,ntimes_swvel,ntimes_al,ntimes_kp,
      |  ntimes_f107,ntimes_f107a
-      logical :: aluse   ! logical to use AL in Weimer 2001 model or not
+      logical :: aluse,  ! logical to use AL in Weimer 2001 model or not
+     |  enforce_n2,      ! logical to correct the N2 altitude profile
+     |  et,              ! logical to calculate electron turbulent heating
+     |  saps,            ! logical to include empirical SAPS
+     |  doEclipse,       ! logical to do eclipse mask or not
+     |  oneway,          ! logical to use oneway mix reader
+     |  duff             ! logical to choose reaction rate for N(2D)+O2->NO+O
 !
 ! Parameters as read from namelist:
-      real :: rd_power,rd_ctpoten,rd_f107,rd_f107a,rd_bximf,rd_byimf,
-     |  rd_bzimf,rd_swvel,rd_swden,rd_kp
+      real(rp) :: rd_power,rd_ctpoten,rd_f107,rd_f107a,rd_bximf,
+     |  rd_byimf,rd_bzimf,rd_swvel,rd_swden,rd_kp
 !
 ! If indices_interp==1, time-dependent indices (power_time, ctpoten_time, etc)
 ! will be interpolated to model time, otherwise they will change only
@@ -116,7 +132,6 @@
       integer :: indices_interp=1
 !
 ! Import data file names:
-      integer,parameter :: mxlen_filename=1024
       character(len=mxlen_filename) ::
 !
 ! 4/2/08 btf: Introducing Weimer 2005 model (wei05sc.F).
@@ -141,7 +156,13 @@
      |  saber_ncfile,       ! SABER data (T,Z)
      |  tidi_ncfile,        ! TIDI data (U,V)
      |  ctmt_ncfile,        ! CTMT tidal data (T,U,V,Z)
-     |  bgrddata_ncfile     ! background data (T,U,V,Z; V=0)
+     |  bgrddata_ncfile,    ! background data (T,U,V,Z; V=0)
+     |  amienh_ncfile,      ! AMIE NH
+     |  amiesh_ncfile,      ! AMIE SH
+     |  he_coefs_ncfile,    ! coefficients of Helium flux at upper boundary
+     |  subaur_data,        ! SAPS data file
+     |  eclipse_list,       ! Eclipse list data file
+     |  mixfile             ! filename for oneway driving
 
 !     integer,parameter :: ngpivars = 4
 !     real :: gpi_vars(ngpivars) ! f107,f107a,power,ctpoten
@@ -149,34 +170,43 @@
 !    |  gpi_names(ngpivars)      ! names of gpi_vars
 !
 ! Primary history user input (dimension parameters are in params.F):
-      character(len=1024) :: 
+      character(len=mxlen_filename) ::
      |  source,            ! file containing source history (optional)
      |  output(mxhvols)    ! output file(s) (required)
       integer ::
-     |  source_start(3),   ! source history model time
-     |  start(3,mxseries), ! primary history model start time(s)
-     |  stop(3,mxseries),  ! primary history model stop time(s)
-     |  hist(3,mxseries),  ! primary history disk write frequency
+     |  source_start(4),   ! source history model time
+     |  pristart(4,mxseries), ! primary history model start time(s)
+     |  pristop(4,mxseries),  ! primary history model stop time(s)
+     |  prihist(4,mxseries),  ! primary history disk write frequency
      |  mxhist_prim,       ! max number of histories per primary file
      |  noutput            ! number of output files given
 !
 ! Secondary history user input (dimension parameters are in params.F):
-      character(len=1024) :: 
+      character(len=mxlen_filename) ::
      |  secsource,            ! file containing source sec_history (for mhd)
      |  secout(mxhvols)       ! secondary history output file(s)
       character(len=16) ::
      |  secflds(mxfsech)      ! secondary history output fields
       integer ::
-     |  secstart(3,mxseries), ! secondary history model start time(s)
-     |  secstop(3,mxseries),  ! secondary history model stop time(s)
-     |  sechist(3,mxseries),  ! secondary history disk write frequency
+     |  secstart(4,mxseries), ! secondary history model start time(s)
+     |  secstop(4,mxseries),  ! secondary history model stop time(s)
+     |  sechist(4,mxseries),  ! secondary history disk write frequency
      |  mxhist_sech,          ! max number of histories per secondary file
      |  sech_nbyte            ! 4 or 8: write real or double values to secondary file
 !
+      character(len=mxlen_filename) :: nudge_ncpre,nudge_ncpost
+      character(len=mxlen_filename),dimension(mxhvols) :: nudge_ncfile
+      character(len=16),dimension(mxfsech) :: nudge_flds
+      logical,dimension(mxfsech) :: nudge_lbc,nudge_f4d
+      logical :: nudge_use_refdate
+      integer,dimension(2) :: nudge_refdate
+      real(rp),dimension(2) :: nudge_sponge,nudge_delta,nudge_power
+      real(rp) :: nudge_alpha
+!
 ! Namelist for read:
-      namelist/tgcm_input/
-     |  label,step,
-     |  source,source_start,output,start,stop,hist,
+      namelist/tgcm_input/ 
+     |  label,step,nstep_sub,
+     |  source,source_start,output,pristart,pristop,prihist,
      |  secout,secstart,secstop,sechist,secflds,
      |  potential_model,eddy_dif,dynamo,tide,tide2,tide3m3,
      |  f107,f107a,power,ctpoten,bximf,byimf,bzimf,swvel,swden,al,
@@ -189,8 +219,14 @@
      |  kp_time,al_time,swden_time,swvel_time,indices_interp,
      |  imf_ncfile,saber_ncfile,tidi_ncfile,sech_nbyte,f107_time,
      |  f107a_time,hpss_path,current_pg,current_kq,calc_helium,
-     |  enforce_opfloor,bgrddata_ncfile,ctmt_ncfile,opdiffcap,
-     |  amienh,amiesh,amie_ibkg
+     |  bgrddata_ncfile,ctmt_ncfile,electron_heating,duff,
+     |  amienh,amiesh,amie_ibkg,he_coefs_ncfile,enforce_n2,et,saps,
+     |  subaur_data,doEclipse,eclipse_list,oneway,mixfile,
+     |  nudge_ncpre,nudge_ncfile,nudge_ncpost,nudge_flds,
+     |  nudge_lbc,nudge_f4d,nudge_use_refdate,nudge_refdate,
+     |  nudge_sponge,nudge_delta,nudge_power,nudge_alpha,
+     |  opdiffcap,opdiffrate,opdifflev,opfloor,oprate,oplev,oplatwidth,
+     |  te_cap,ti_cap
 !
 ! List of fields that are always written to secondary histories:
       character(len=16) :: secflds_mandatory(6) =
@@ -202,7 +238,7 @@
      |   'ZMAG            '/)   ! see sub dynamo_inputs in pdynamo.F
 !
 ! Current working (execution) directory (set by tgcm.F):
-      character(len=120) :: cwd  ! current working directory
+      character(len=mxlen_filename) :: cwd  ! current working directory
       integer :: pid ! current process id
 !
 #ifdef USE_PDAF
@@ -211,12 +247,12 @@
 #endif
       contains
 !-------------------------------------------------------------------
-      subroutine input(mytid,ntask)
+      subroutine input(ntask)
 !
 ! Read and validate user namelist input (called from main tgcm.F).
 !      
 ! Args:
-      integer,intent(in) :: mytid,ntask
+      integer,intent(in) :: ntask
 !
 ! Initialize:
       call inp_init
@@ -272,14 +308,21 @@
 
       saber_ncfile = ' '      ! SABER data file
       tidi_ncfile = ' '       ! TIDI data file
-      bgrddata_ncfile = ' '   ! Background data file
       ctmt_ncfile = ' '       ! CTMT data file for lbc tides 
+      bgrddata_ncfile = ' '   ! Background data file
+      amienh_ncfile = ' '     ! AMIE NH data file
+      amiesh_ncfile = ' '     ! AMIE NH data file
+      he_coefs_ncfile = ' '   ! Helium coefficients
+      subaur_data = ' '
+      eclipse_list = ' '
+      mixfile = 'msphere.mix.h5'
 !
       start_day  = ispval
       start_year = ispval
       calendar_advance = ispval
 !
       step    = ispval
+      nstep_sub = ispval
       eddy_dif = ispval  ! new as of 4/10
       dynamo  = ispval
       current_pg = 1     ! on by default
@@ -295,8 +338,23 @@
       colfac  = spval
       joulefac= spval
       calc_helium = ispval
-      enforce_opfloor = ispval
+      te_cap = 10000._rp
+      ti_cap = 10000._rp
+      electron_heating = ispval
+      enforce_n2 = .false.
+      et = .false.
+      saps = .false.
+      doEclipse = .false.
+      oneway = .false.
+      duff = .false.
+
       opdiffcap = spval
+      opdiffrate = spval
+      opdifflev = spval
+      opfloor = spval
+      oprate = spval
+      oplev = spval
+      oplatwidth = spval
 
       f107    = spval
       f107a   = spval
@@ -326,9 +384,9 @@
       source = ' '
       output = ' '
       source_start(:) = ispval
-      start(:,:) = ispval
-      stop(:,:)  = ispval
-      hist(:,:)  = ispval
+      pristart(:,:) = ispval
+      pristop(:,:)  = ispval
+      prihist(:,:)  = ispval
       mxhist_prim = 10 ! default max number of histories per primary file
       if (dlat == 2.5) mxhist_prim = 4 ! 2.5 degree horizontal resolution 
 !
@@ -341,6 +399,20 @@
       mxhist_sech = 24 ! default max number of histories per sech file
       if (dlat == 2.5) mxhist_sech = 10 ! 2.5 degree horizontal resolution 
       sech_nbyte    = ispval
+
+      nudge_ncpre = ' '
+      nudge_ncfile = ' '
+      nudge_ncpost = ' '
+      nudge_flds = ' '
+      nudge_lbc = .false.
+      nudge_f4d = .false.
+      nudge_use_refdate = .false.
+      nudge_refdate = ispval
+      nudge_sponge = spval
+      nudge_delta = spval
+      nudge_power = spval
+      nudge_alpha = spval
+
       end subroutine inp_init
 !-------------------------------------------------------------------
       subroutine inp_model(ntask)
@@ -351,7 +423,6 @@
 ! Local:
       integer :: i,n,ier
       character(len=16) :: logname
-      real :: rday,rhour,rmin,rval
 !
 ! Get login name:
       logname = ' '
@@ -487,7 +558,6 @@
       endif
 !
 ! Number of tasks in lat,lon dimensions (ntask_lat*ntask_lon must == ntask):
-#ifdef MPI
       if (ntask_lat==ispval.or.ntask_lon==ispval) then
 !
 ! Choose number of tasks in lon,lat dimensions:
@@ -523,7 +593,6 @@
      |    ' ntask_maglat=',i3,' (ntask=',i3,')')")
      |    ntask_maglon,ntask_maglat,ntask
       endif
-#endif
 !
 ! ncep data file:
       if (len_trim(ncep_ncfile) > 0) call expand_path(ncep_ncfile)
@@ -593,6 +662,64 @@
         write(6,"('Input: O+ diffusion maximum (opdiffcap)=',es12.4)")
      |    opdiffcap
       endif
+      if (opdiffrate==spval) then
+        opdiffrate = 0. ! default is off
+        write(6,"('Input: default diffusion decaying rate (opdiffrate)',
+     |    ' is turned off by default.')")
+      else
+        write(6,"('Input: O+ diffusion decaying rate (opdiffrate)='
+     |    ,es12.4)") opdiffrate
+      endif
+      if (opdifflev==spval) then
+        write(6,"('Input: default diffusion capping level (opdifflev)',
+     |    ' is turned off by default.')")
+      else
+        write(6,"('Input: O+ diffusion capping level (opdifflev)='
+     |    ,es12.4)") opdifflev
+      endif
+!
+! O+ floor:
+      if (opfloor==spval) then
+        opfloor = 0. ! default is off
+        write(6,"('Input: default O+ minimum (opfloor) is',
+     |    ' turned off by default.')")
+      else
+        write(6,"('Input: O+ minimum (opfloor)=',es12.4)") opfloor
+      endif
+      if (oprate==spval) then
+        oprate = 0. ! default is off
+        write(6,"('Input: default O+ decaying rate (oprate)',
+     |    ' is turned off by default.')")
+      else
+        write(6,"('Input: O+ decaying rate (oprate)=',es12.4)") oprate
+      endif
+      if (oplev==spval) then
+        write(6,"('Input: default O+ flooring level (oplev)',
+     |    ' is turned off by default.')")
+      else
+        write(6,"('Input: O+ flooring level (oplev)=',es12.4)") oplev
+      endif
+      if (oplatwidth==spval) then
+        oplatwidth = 0. ! default is off
+        write(6,"('Input: default O+ flooring latitude band',
+     |    ' (oplatwidth) is turned off by default.')")
+      else
+        write(6,"('Input: O+ flooring latitude band (oplatwidth)=',
+     |    es12.4)") oplatwidth
+      endif
+
+      if (electron_heating == ispval) electron_heating = 6
+      if (electron_heating == 4) then
+        write(6,"('Input: thermal electron heating scheme uses',
+     |    'default 4th order Swartz & Nisbet [1972] formula')")
+      elseif (electron_heating == 6) then
+        write(6,"('Input: thermal electron heating scheme uses',
+     |    '6th order Smithtro & Solomon [2008] formula')")
+      else
+        write(6,"('>>> INPUT: ELECTRON_HEATING can only be 4 or 6,'
+     |    'but it is given as',i4)") electron_heating
+        call shutdown('Invalid thermal electron heating scheme')
+      endif
 !
 ! If calc_helium == 1 then calculate helium, otherwise zero out helium.
 !
@@ -606,14 +733,31 @@
       endif
       if (calc_helium > 0) calc_helium=1
 !
-! If enforce_opfloor > 0, then enforce O+ floor (see oplus.F)
-!
-      if (enforce_opfloor==ispval.or.enforce_opfloor > 0) then
-        enforce_opfloor = 1
-      elseif (enforce_opfloor <= 0) then
-        enforce_opfloor = 0
+! Set default ncfile for Helium coefficients
+      if (len_trim(he_coefs_ncfile) == 0) then
+        if (nlat == 36) then
+          he_coefs_ncfile = '$TGCMDATA/he_coefs_sres.nc'
+        else
+          he_coefs_ncfile = '$TGCMDATA/he_coefs_dres.nc'
+        endif
       endif
-      write(6,"('Input: enforce_opfloor=',i3)") enforce_opfloor
+      call expand_path(he_coefs_ncfile)
+!
+! SAPS data files:
+      if (len_trim(subaur_data) == 0)
+     |  subaur_data = '$TGCMDATA/subaur_data.nc'
+      call expand_path(subaur_data)
+!
+! Eclipse list data file:
+      if (len_trim(eclipse_list) == 0)
+     |  eclipse_list = '$TGCMDATA/eclipse_list.nc'
+      call expand_path(eclipse_list)
+!
+! nudging data files:
+      do i = 1,mxhvols
+        if (len_trim(nudge_ncfile(i)) > 0)
+     |    call expand_path(nudge_ncfile(i))
+      enddo
 !
 ! 1/12/05 btf: removed old dynamo (was in dynamo_old.F)
 ! 6/11/08 btf: remove dynamo==0 option
@@ -643,6 +787,8 @@
         write(6,"('Will read AMIE data inputs')")
         iamie = 1
         potential_model = 'AMIE'
+        amienh_ncfile = trim(amienh)
+        amiesh_ncfile = trim(amiesh)
       endif
 !
 ! Save certain params as originally read by namelist read:
@@ -742,16 +888,15 @@
 ! Validate primary history inputs:
 !
 ! Local:
-      integer :: n,i,ii,nhists,nsteps,nsteps_hist(mxseries),
-     |  nstarts,nstops,nstep_total,nsrc,
-     |  nout,nhists_total,modeltime(4),nfiles_prim
+      integer :: n,i,nhists,nsteps,nsteps_hist(mxseries),
+     |  nstarts,nstops,nstep_total,nsrc,nout,nhists_total,nfiles_prim
       integer(kind=8) :: step8,
      |  nsec_start(mxseries),nsec_stop(mxseries),
      |  nsec_hist (mxseries)
-      character(len=1024) :: ch1024
-      character(len=1024), dimension(:), allocatable :: hvols
+      character(len=mxlen_filename) :: ch1024
+      character(len=mxlen_filename), dimension(:), allocatable :: hvols
 #ifdef USE_PDAF
-      character(len=1024) :: extOut
+      character(len=mxlen_filename) :: extOut
 #endif 
 !
 ! External:
@@ -764,38 +909,38 @@
       step8 = step
 !
 ! Model start time(s):
-      n = size(start)-count(start==ispval)
-      if (mod(n,3) /= 0) then
-        write(6,"(/,'>>> INPUT: START must be given as series of ',
-     |    '3-integer triplet times',/,11x,'(day,hr,min).',/)")
-        call shutdown('START')
+      n = size(pristart)-count(pristart==ispval)
+      if (mod(n,4) /= 0) then
+        write(6,"(/,'>>> INPUT: PRISTART must be given as series of ',
+     |    '4-integer triplet times',/,11x,'(day,hr,min,sec).',/)")
+        call shutdown('PRISTART')
       endif 
-      nstarts = n/3 ! number of start times given
+      nstarts = n/4 ! number of start times given
       if (nstarts < 1 .or. nstarts > mxseries) then
         write(6,"(/,'>>> INPUT: At least one and a maximum of ',i3,
-     |    ' 3-integer START times are allowed.',/)") mxseries
-        call shutdown('START')
+     |    ' 4-integer PRISTART times are allowed.',/)") mxseries
+        call shutdown('PRISTART')
       endif
       do i=1,nstarts
-        call validate_mtime(start(:,i),mxday,'START')
+        call validate_mtime(pristart(:,i),mxday,'PRISTART')
       enddo
 !
 ! Start time(s) must be multiple of step, and must increase: 
       nsec_start(:) = 0
       do i=1,nstarts
-        nsec_start(i) = mtime_to_nsec(start(:,i))
+        nsec_start(i) = mtime_to_nsec(pristart(:,i))
         if (mod(nsec_start(i),step8) /= 0) then
-          write(6,"(/,'>>> INPUT: START time ',i1,' must be a ',
-     |      'multiple of step:',/,11x,'START=',3i4,' STEP=',i4,/)")
-     |      i,start(:,i),step
-          call shutdown('START')
+          write(6,"(/,'>>> INPUT: PRISTART time ',i1,' must be a ',
+     |      'multiple of step:',/,11x,'PRISTART=',4i4,' STEP=',i4,/)")
+     |      i,pristart(:,i),step
+          call shutdown('PRISTART')
         endif
         if (i > 1) then
           if (nsec_start(i-1) > nsec_start(i)) then
-            write(6,"(/,'>>> INPUT: START times must increase.',/,
-     |        11x,'START ',i2,' = ',3i4,' START ',i2,' = ',3i4,
-     |        /)") i-1,start(:,i-1),i,start(:,i)
-            call shutdown('START')
+            write(6,"(/,'>>> INPUT: PRISTART times must increase.',/,
+     |        11x,'PRISTART ',i2,' = ',4i4,' PRISTART ',i2,' = ',4i4,
+     |        /)") i-1,pristart(:,i-1),i,pristart(:,i)
+            call shutdown('PRISTART')
           endif
         endif
       enddo 
@@ -804,51 +949,51 @@
 !   day must be the same as the starting calendar day.
 !
       if (calendar_advance > 0) then
-        if (start(1,1) /= start_day) then
+        if (pristart(1,1) /= start_day) then
           write(6,"(/,'>>> INPUT: Starting calendar day START_DAY =',
      |      i4)") start_day
-          write(6,"(11x,'Starting model day START(1)=',i4)")
-     |      start(1,1)
+          write(6,"(11x,'Starting model day PRISTART(1)=',i4)")
+     |      pristart(1,1)
           write(6,"(11x,'CALENDAR_ADVANCE = ',i2)") calendar_advance
           write(6,"('If the model is to be advanced in calendar time,',
      |      ' the starting model day',/,'  must be equal to the ',
      |      'starting calendar day.',/)")
-          call shutdown('START')
+          call shutdown('PRISTART')
         endif
       endif
 !
 ! Stop time(s):
-      n = size(stop)-count(stop==ispval)
-      if (mod(n,3) /= 0) then
-        write(6,"(/,'>>> INPUT: STOP must be given as series of ',
-     |    '3-integer triplet times (day,hr,min).',/)")
-        call shutdown('STOP')
+      n = size(pristop)-count(pristop==ispval)
+      if (mod(n,4) /= 0) then
+        write(6,"(/,'>>> INPUT: PRISTOP must be given as series of ',
+     |    '4-integer triplet times (day,hr,min,sec).',/)")
+        call shutdown('PRISTOP')
       endif 
-      nstops = n/3 ! number of stop times given
+      nstops = n/4 ! number of stop times given
       if (nstops < 1 .or. nstops > mxseries) then
         write(6,"(/,'>>> INPUT: At least one and a maximum of ',i2,
-     |    ' 3-integer STOP times are allowed.',/)") mxseries
-        call shutdown('STOP')
+     |    ' 4-integer PRISTOP times are allowed.',/)") mxseries
+        call shutdown('PRISTOP')
       endif
       do i=1,nstops
-        call validate_mtime(stop(:,i),mxday,'STOP')
+        call validate_mtime(pristop(:,i),mxday,'PRISTOP')
       enddo
 !
 ! Stop time(s) must be multiple of step, and must increase: 
       nsec_stop(:) = 0
       do i=1,nstops
-        nsec_stop(i) = mtime_to_nsec(stop(:,i))
+        nsec_stop(i) = mtime_to_nsec(pristop(:,i))
         if (mod(nsec_stop(i),step8) /= 0) then
-          write(6,"(/,'>>> INPUT: STOP time ',i1,' must be a ',
-     |      'multiple of step:',/,11x,'STOP=',3i4,' STEP=',i4,/)")
-     |      i,stop(:,i),step
-          call shutdown('STOP')
+          write(6,"(/,'>>> INPUT: PRISTOP time ',i1,' must be a ',
+     |      'multiple of step:',/,11x,'PRISTOP=',4i4,' STEP=',i4,/)")
+     |      i,pristop(:,i),step
+          call shutdown('PRISTOP')
         endif
         if (i > 1) then
           if (nsec_stop(i-1) > nsec_stop(i)) then
-            write(6,"(/,'>>> INPUT: STOP times must increase.',/,
-     |        11x,'STOP 1 =',3i4,' STOP 2 =',3i4,/)") stop
-            call shutdown('STOP')
+            write(6,"(/,'>>> INPUT: PRISTOP times must increase.',/,
+     |        11x,'PRISTOP 1 =',4i4,' PRISTOP 2 =',4i4,/)") pristop
+            call shutdown('PRISTOP')
           endif
         endif
       enddo 
@@ -857,53 +1002,53 @@
 ! Note: this module does not cross year boundaries in a single run.
 !       To cross a year boundary, make a run up to day 365 or 366,
 !       then use that file as the source (source_start=365 or 366), 
-!       for a new run with START=1,0,0. (note mxday==366)
+!       for a new run with PRISTART=1,0,0,0. (note mxday==366)
 !
       if (nsec_start(1)==nsec_stop(1)) then
-        write(6,"(/,'NOTE input: start(1)==stop(1): no time steps',
-     |    ' will be taken this run.')")
+        write(6,"(/,'NOTE input: pristart(1)==pristop(1): ',
+     |    'no time steps will be taken this run.')")
       else
         do i=1,nstops
           if (nsec_start(i) >= nsec_stop(i)) then
-            write(6,"(/,'>>> INPUT: STOP time ',i1,' must be > ',
-     |        'START time',/,11x,'STOP time ',i1,' = ',3i4,
-     |        ' START =',3i4,/)") i,i,stop(:,i),start(:,i)
-            call shutdown('START/STOP')
+            write(6,"(/,'>>> INPUT: PRISTOP time ',i1,' must be > ',
+     |        'PRISTART time',/,11x,'PRISTOP time ',i1,' = ',4i4,
+     |        ' PRISTART =',4i4,/)") i,i,pristop(:,i),pristart(:,i)
+            call shutdown('PRISTART/PRISTOP')
           endif
         enddo
       endif
 !
 ! History write frequencies:
-      n = size(hist)-count(hist==ispval)
-      if (mod(n,3) /= 0) then
-        write(6,"(/,'>>> INPUT: HIST must be given as series of ',
-     |    '3-integer triplet times (day,hr,min).',/)")
-        call shutdown('HIST')
+      n = size(prihist)-count(prihist==ispval)
+      if (mod(n,4) /= 0) then
+        write(6,"(/,'>>> INPUT: PRIHIST must be given as series of ',
+     |    '4-integer triplet times (day,hr,min,sec).',/)")
+        call shutdown('PRIHIST')
       endif 
-      nhists = n/3 ! number of hist times given
+      nhists = n/4 ! number of hist times given
       if (nhists < 1 .or. nhists > mxseries) then
         write(6,"(/,'>>> INPUT: At least one and a maximum of ',i2,
-     |    ' 3-integer HIST times are allowed.',/)") mxseries
-        call shutdown('HIST')
+     |    ' 4-integer PRIHIST times are allowed.',/)") mxseries
+        call shutdown('PRIHIST')
       endif
       do i=1,nhists
-        call validate_mtime(hist(:,i),mxday,'HIST')
+        call validate_mtime(prihist(:,i),mxday,'PRIHIST')
       enddo
 !
 ! History write frequencies must be multiple of step: 
       nsec_hist(:) = 0
       do i=1,nhists
-        nsec_hist(i) = mtime_to_nsec(hist(:,i))
+        nsec_hist(i) = mtime_to_nsec(prihist(:,i))
         if (nsec_hist(i)==0) then
-          write(6,"(/,'>>> INPUT: HIST write frequency ',i1,
+          write(6,"(/,'>>> INPUT: PRIHIST write frequency ',i1,
      |      ' must be > 0',/)") i
-          call shutdown('HIST')
+          call shutdown('PRIHIST')
         endif
         if (mod(nsec_hist(i),step8) /= 0) then
-          write(6,"(/,'>>> INPUT: HIST time ',i1,' must be a ',
-     |      'multiple of step:',/,11x,'HIST=',3i4,' STEP=',i4,/)")
-     |      i,hist(:,i),step
-          call shutdown('HIST')
+          write(6,"(/,'>>> INPUT: PRIHIST time ',i1,' must be a ',
+     |      'multiple of step:',/,11x,'PRIHIST=',4i4,' STEP=',i4,/)")
+     |      i,prihist(:,i),step
+          call shutdown('PRIHIST')
         endif
       enddo 
 !
@@ -911,13 +1056,13 @@
       if (nstarts /= nstops .or. nstarts /= nhists .or. 
      |    nstops  /= nhists) then
         write(6,"(/,'>>> INPUT: must provide same number of times ',
-     |    'for',/,11x,'START, STOP, and HIST.')")
+     |    'for',/,11x,'PRISTART, PRISTOP, and PRIHIST.')")
         write(6,"(11x,'nstarts=',i3,' nstops=',i3,' nhists=',i3)")
      |    nstarts,nstops,nhists
         call shutdown('ntimes')
       endif
 !
-! Number of steps in each time series must be a multiple of HIST:
+! Number of steps in each time series must be a multiple of PRIHIST:
       do i=1,nstarts
         if (i==1) then
           nsteps = (nsec_stop(i)-nsec_start(i))/step
@@ -928,13 +1073,13 @@
         if (mod(nsteps,nsteps_hist(i)) /= 0) then
           write(6,"(/,'>>> INPUT: number of steps in time series ',
      |      i1,' must be multiple of the ',/,11x,'number of steps',
-     |      ' in HIST ',i1,'.')") i,i
+     |      ' in PRIHIST ',i1,'.')") i,i
           write(6,"(11x,'nsteps ',i1,' = ',i6,' nsteps_hist ',i1,
      |      ' = ',i3)") i,nsteps,i,nsteps_hist(i)
-          write(6,"(11x,'START',i1,' = ',3i4,' STOP',i1,' = ',3i4,
-     |      ' HIST',i1,' = ',3i4,/)") i,start(:,i),i,stop(:,i),
-     |      i,hist(:,i)
-          call shutdown('HIST')
+          write(6,"(11x,'PRISTART',i1,' = ',4i4,
+     |      ' PRISTOP',i1,' = ',4i4,' PRIHIST',i1,' = ',4i4,/)")
+     |      i,pristart(:,i),i,pristop(:,i),i,prihist(:,i)
+          call shutdown('PRIHIST')
         endif
       enddo ! i=1,nstarts
 !
@@ -944,11 +1089,11 @@
           if (nsec_start(i) < nsec_stop(i-1)) then
             write(6,"(/,'>>> INPUT: primary history time series',
      |        ' cannot overlap.')")
-            write(6,"(11x,'For series ',i2,': START=',3i4,
-     |        ' STOP=',3i4)") i-1,start(:,i-1),start(:,i-1)
-            write(6,"(11x,'For series ',i2,': START=',3i4,
-     |        ' STOP=',3i4,/)") i,start(:,i),stop(:,i)
-            call shutdown('START/STOP')
+            write(6,"(11x,'For series ',i2,': PRISTART=',4i4,
+     |        ' PRISTOP=',4i4)") i-1,pristart(:,i-1),pristart(:,i-1)
+            write(6,"(11x,'For series ',i2,': PRISTART=',4i4,
+     |        ' PRISTOP=',4i4,/)") i,pristart(:,i),pristop(:,i)
+            call shutdown('PRISTART/PRISTOP')
           endif
         enddo
       endif
@@ -971,25 +1116,26 @@
         call shutdown('SOURCE_START')
       endif
       if (nsrc > 0) then
-        if (n /= 3) then
-          write(6,"(/,'>>> INPUT: need 3 values for SOURCE_START ',
-     |      'time (day,hour,minute),',/,11x,
-     |      'e.g.: SOURCE_START=1,0,0',/)")
-          call shutdown('START')
+        if (n /= 4) then
+          write(6,"(/,'>>> INPUT: need 4 values for SOURCE_START ',
+     |      'time (day,hour,minute,secend),',/,11x,
+     |      'e.g.: SOURCE_START=1,0,0,0',/)")
+          call shutdown('PRISTART')
         endif
         call validate_mtime(source_start,mxday,'SOURCE_START')
 !
-! Model start time hr,min must be same as source_start hr,min:
+! Model start time hr,min must be same as source_start hr,min,sec:
 ! (days can be different)
-        if (start(2,1) /= source_start(2) .or.
-     |      start(3,1) /= source_start(3)) then
-          write(6,"(/,'>>> INPUT: START time (hr,min) ',
+        if (pristart(2,1) /= source_start(2) .or.
+     |      pristart(3,1) /= source_start(3) .or.
+     |      pristart(4,1) /= source_start(4)) then
+          write(6,"(/,'>>> INPUT: PRISTART time (hr,min,sec) ',
      |      'must be the same as SOURCE_START time.')")
-          write(6,"('  START        = ',3i4)") start(:,1)
-          write(6,"('  SOURCE_START = ',3i4)") source_start(:)
-          write(6,"('  (START and SOURCE_START days can be ',
+          write(6,"('  PRISTART    = ',4i4)") pristart(:,1)
+          write(6,"('  SOURCE_START = ',4i4)") source_start(:)
+          write(6,"('  (PRISTART and SOURCE_START days can be ',
      |      'different)',/)")
-          call shutdown('START')
+          call shutdown('PRISTART')
         endif
       endif
 !
@@ -1071,19 +1217,16 @@
 ! Validate secondary history inputs:
 !
 ! Local:
-      integer :: n,i,ii,nstarts,nstops,nhists,nout,nsteps,
-     |  nsteps_hist(mxseries_sech),nsechs_total,nseriesp,nflds_sech,
-     |  nhists_total,nfiles_sech,nonblank,nsrc,mtime(4)
+      integer :: n,i,nstarts,nstops,nhists,nout,nsteps,
+     |  nsteps_hist(mxseries_sech),nseriesp,nflds_sech,
+     |  nhists_total,nfiles_sech,nonblank
       integer(kind=8) :: step8,
      |  nsec_start(mxseries_sech),nsec_stop(mxseries_sech),
      |  nsec_hist (mxseries_sech)
-      character(len=1024) :: ch1024
-      character(len=1024), dimension(:), allocatable :: hvols
-      character(len=16) ::
-     |  secflds_tmp(mxfsech)
-      logical :: found
+      character(len=mxlen_filename) :: ch1024
+      character(len=mxlen_filename), dimension(:), allocatable :: hvols
 #ifdef USE_PDAF
-      character(len=1024) :: extOut
+      character(len=mxlen_filename) :: extOut
 #endif 
 !
 ! External:
@@ -1133,17 +1276,17 @@
 !
 ! Secondary history start time(s):
       n = size(secstart)-count(secstart==ispval)
-      if (mod(n,3) /= 0) then
+      if (mod(n,4) /= 0) then
         write(6,"(/,'>>> INPUT: SECSTART must be given as series of ',
-     |    '3-integer triplet times',/,11x,'(day,hr,min).',/,11x,
+     |    '4-integer triplet times',/,11x,'(day,hr,min,sec).',/,11x,
      |    'A maximum of ',i3,' secstart times are allowed.',/)")
      |    mxseries_sech
         call shutdown('SECSTART')
       endif 
-      nstarts = n/3 ! number of start times given
+      nstarts = n/4 ! number of start times given
       if (nstarts < 1 .or. nstarts > mxseries_sech) then
         write(6,"(/,'>>> INPUT: At least one and a maximum of ',i3,
-     |    ' 3-integer SECSTART times are allowed.',/)") mxseries_sech
+     |    ' 4-integer SECSTART times are allowed.',/)") mxseries_sech
         call shutdown('SECSTART')
       endif
       do i=1,nstarts
@@ -1156,14 +1299,14 @@
         nsec_start(i) = mtime_to_nsec(secstart(:,i))
         if (mod(nsec_start(i),step8) /= 0) then
           write(6,"(/,'>>> INPUT: SECSTART time ',i1,' must be a ',
-     |      'multiple of step:',/,11x,'SECSTART=',3i4,' STEP=',i4,/)")
+     |      'multiple of step:',/,11x,'SECSTART=',4i4,' STEP=',i4,/)")
      |      i,secstart(:,i),step
           call shutdown('SECSTART')
         endif
         if (i > 1) then
           if (nsec_start(i-1) > nsec_start(i)) then
             write(6,"(/,'>>> INPUT: SECSTART times must increase.',/,
-     |        11x,'SECSTART ',i2,' = ',3i4,' SECSTART ',i2,' = ',3i4,
+     |        11x,'SECSTART ',i2,' = ',4i4,' SECSTART ',i2,' = ',4i4,
      |        /)") i-1,secstart(:,i-1),i,secstart(:,i)
             call shutdown('SECSTART')
           endif
@@ -1172,37 +1315,37 @@
 !
 ! Secondary start times must be >= first primary start times and
 ! <= last primary stop time:
-      nseriesp = (size(start)-count(start==ispval))/3
+      nseriesp = (size(pristart)-count(pristart==ispval))/4
       do i=1,nstarts
-        if (nsec_start(i) < mtime_to_nsec(start(:,1))) then
+        if (nsec_start(i) < mtime_to_nsec(pristart(:,1))) then
           write(6,"(/,'>>> INPUT: all secondary start times SECSTART',
-     |      ' must be >= first model START time.')")
-          write(6,"(11x,'First model START = ',3i4,' SECSTART ',i2,
-     |      ' = ',3i4,/)") start(:,1),i,secstart(:,i)
+     |      ' must be >= first model PRISTART time.')")
+          write(6,"(11x,'First model PRISTART = ',4i4,' SECSTART ',i2,
+     |      ' = ',4i4,/)") pristart(:,1),i,secstart(:,i)
           call shutdown('SECSTART')
         endif
-        if (nsec_start(i) > mtime_to_nsec(stop(:,nseriesp))) then
+        if (nsec_start(i) > mtime_to_nsec(pristop(:,nseriesp))) then
           write(6,"(/,'>>> INPUT: all secondary start times SECSTART',
-     |      ' must be <= last model STOP time.')")
-          write(6,"(11x,' SECSTART ',i2,' = ',3i4,' last STOP=',
-     |      3i4)") secstart(:,1),i,stop(:,nseriesp)
+     |      ' must be <= last model PRISTOP time.')")
+          write(6,"(11x,' SECSTART ',i2,' = ',4i4,' last PRISTOP=',
+     |      4i4)") secstart(:,1),i,pristop(:,nseriesp)
           call shutdown('SECSTART')
         endif
       enddo
 !
 ! Secondary history stop time(s):
       n = size(secstop)-count(secstop==ispval)
-      if (mod(n,3) /= 0) then
+      if (mod(n,4) /= 0) then
         write(6,"(/,'>>> INPUT: SECSTOP must be given as series of ',
-     |    '3-integer triplet times',/,11x,'(day,hr,min).',/,11x,
+     |    '4-integer triplet times',/,11x,'(day,hr,min,sec).',/,11x,
      |    'A maximum of ',i3,' secstop times are allowed.',/)")
      |    mxseries_sech
         call shutdown('SECSTOP')
       endif 
-      nstops = n/3 ! number of stop times given
+      nstops = n/4 ! number of stop times given
       if (nstops < 1 .or. nstops > mxseries_sech) then
         write(6,"(/,'>>> INPUT: At least one and a maximum of ',i3,
-     |    ' 3-integer SECSTOP times are allowed.',/)") mxseries_sech
+     |    ' 4-integer SECSTOP times are allowed.',/)") mxseries_sech
         call shutdown('SECSTOP')
       endif
       do i=1,nstops
@@ -1215,14 +1358,14 @@
         nsec_stop(i) = mtime_to_nsec(secstop(:,i))
         if (mod(nsec_stop(i),step8) /= 0) then
           write(6,"(/,'>>> INPUT: SECSTOP time ',i1,' must be a ',
-     |      'multiple of step:',/,11x,'SECSTOP=',3i4,' STEP=',i4,/)")
+     |      'multiple of step:',/,11x,'SECSTOP=',4i4,' STEP=',i4,/)")
      |      i,secstop(:,i),step
           call shutdown('SECSTOP')
         endif
         if (i > 1) then
           if (nsec_stop(i-1) > nsec_stop(i)) then
             write(6,"(/,'>>> INPUT: SECSTOP times must increase.',/,
-     |        11x,'SECSTOP ',i2,' = ',3i4,' SECSTOP ',i2,' = ',3i4,
+     |        11x,'SECSTOP ',i2,' = ',4i4,' SECSTOP ',i2,' = ',4i4,
      |        /)") i-1,secstop(:,i-1),i,secstop(:,i)
             call shutdown('SECSTOP')
           endif
@@ -1234,36 +1377,37 @@
         if (nsec_stop(i) < nsec_start(i)) then
           write(6,"(/,'>>> INPUT: SECSTART must be <= SECSTOP for ',
      |      'all time series.')")
-          write(6,"('For time series ',i2,': SECSTART=',3i4,' SECSTOP=',
-     |      3i4,/)") i,secstart(:,i),secstop(:,i)
+          write(6,"('For time series ',i2,': SECSTART=',4i4,' SECSTOP=',
+     |      4i4,/)") i,secstart(:,i),secstop(:,i)
           call shutdown('SECSTART/SECSTOP')
         endif
       enddo
 !
 ! Secondary stop times must be <= last primary stop time:
-      nstarts = n/3 ! number of start times given
+      nstarts = n/4 ! number of start times given
       do i=1,nstarts
-        if (nsec_stop(i) > mtime_to_nsec(stop(:,nseriesp))) then
+        if (nsec_stop(i) > mtime_to_nsec(pristop(:,nseriesp))) then
           write(6,"(/,'>>> INPUT: all secondary stop times must be',
      |      ' <= final model stop time.')")
-          write(6,"('For sech time series ',i2,': SECSTOP=',3i4,
-     |      ' Model STOP = ',3i4,/)") i,secstop(:,i),stop(:,nseriesp)
+          write(6,"('For sech time series ',i2,': SECSTOP=',4i4,
+     |      ' Model PRISTOP = ',4i4,/)")
+     |      i,secstop(:,i),pristop(:,nseriesp)
           call shutdown('SECSTOP')
         endif
       enddo
 !
 ! Secondary history write frequencies:
       n = size(sechist)-count(sechist==ispval)
-      if (mod(n,3) /= 0) then
+      if (mod(n,4) /= 0) then
         write(6,"(/,'>>> INPUT: SECHIST must be given as series of ',
-     |    '3-integer triplet times (day,hr,min).',/,11x,'A maximum',
+     |    '4-integer triplet times (day,hr,min,sec).',/,11x,'A maximum',
      |    ' of ',i3,' SECHIST times are allowed.',/)") mxseries_sech
         call shutdown('SECHIST')
       endif 
-      nhists = n/3 ! number of hist times given
+      nhists = n/4 ! number of hist times given
       if (nhists < 1 .or. nhists > mxseries_sech) then
         write(6,"(/,'>>> INPUT: At least one and a maximum of ',i3,
-     |    ' 3-integer SECHIST times are allowed.',/)")
+     |    ' 4-integer SECHIST times are allowed.',/)")
         call shutdown('SECHIST')
       endif
       do i=1,nhists
@@ -1281,7 +1425,7 @@
         endif
         if (mod(nsec_hist(i),step8) /= 0) then
           write(6,"(/,'>>> INPUT: SECHIST time ',i1,' must be a ',
-     |      'multiple of step:',/,11x,'SECHIST=',3i4,' STEP=',i4,/)")
+     |      'multiple of step:',/,11x,'SECHIST=',4i4,' STEP=',i4,/)")
      |      i,sechist(:,i),step
           call shutdown('SECHIST')
         endif
@@ -1290,20 +1434,20 @@
 ! Secondary start time cannot be same as start time if initial run,
 ! since sech fields would be zero (this is new as of 12/14/11):
 !
-! 1/5/12: Go back to allowing SECSTART==START for initial runs,
+! 1/5/12: Go back to allowing SECSTART==PRISTART for initial runs,
 !   so secondary histories can have non-zero "prognostic" fields 
 !   in first history copied from SOURCE (any fields saved by sub 
 !   addfld fields will be zero in this copied history, as before).
-!   Tag 1.94.2 will have this, i.e., allowing SECSTART==START for
+!   Tag 1.94.2 will have this, i.e., allowing SECSTART==PRISTART for
 !   initial runs.
 !
 !     nsrc = len_trim(source)
-!     if (nsrc > 0.and.nsec_start(1)==mtime_to_nsec(start(:,1))) then      
+!     if (nsrc > 0.and.nsec_start(1)==mtime_to_nsec(pristart(:,1))) then      
 !       write(6,"(/,'>>> INPUT: If an initial run, secondary start ',
-!    |    ' time SECSTART must not be same as START time.')")
+!    |    ' time SECSTART must not be same as PRISTART time.')")
 !       call nsecs_to_modeltime(nsec_start(1)+nsec_hist(1),mtime)
 !       write(6,"('Please set SECSTART to first SECHIST interval ',
-!    |    'after START time (',3i4,')')") mtime(1:3)
+!    |    'after PRISTART time (',4i4,')')") mtime
 !       call shutdown('SECSTART')
 !     endif
 !
@@ -1328,8 +1472,8 @@
      |      ' in SECHIST ',i1,'.')") i,i
           write(6,"(11x,'nsteps ',i1,' = ',i6,' nsteps_hist ',i1,
      |      ' = ',i3)") i,nsteps,i,nsteps_hist(i)
-          write(6,"(11x,'Time series ',i2,': SECSTART = ',3i4,
-     |      ' SECSTOP = ',3i4,' SECHIST = ',3i4,/)") i,secstart(:,i),
+          write(6,"(11x,'Time series ',i2,': SECSTART = ',4i4,
+     |      ' SECSTOP = ',4i4,' SECHIST = ',4i4,/)") i,secstart(:,i),
      |      secstop(:,i),sechist(:,i)
           call shutdown('SECHIST')
         endif
@@ -1341,10 +1485,10 @@
           if (nsec_start(i) < nsec_stop(i-1)) then
             write(6,"(/,'>>> INPUT: secondary history time series',
      |        ' cannot overlap.')")
-            write(6,"(11x,'For series ',i2,': SECSTART=',3i4,
-     |        ' SECSTOP=',3i4)") i-1,secstart(:,i-1),secstop(:,i-1)
-            write(6,"(11x,'For series ',i2,': SECSTART=',3i4,
-     |        ' SECSTOP=',3i4,/)") i,secstart(:,i),secstop(:,i)
+            write(6,"(11x,'For series ',i2,': SECSTART=',4i4,
+     |        ' SECSTOP=',4i4)") i-1,secstart(:,i-1),secstop(:,i-1)
+            write(6,"(11x,'For series ',i2,': SECSTART=',4i4,
+     |        ' SECSTOP=',4i4,/)") i,secstart(:,i),secstop(:,i)
             call shutdown('SECSTART/SECSTOP')
           endif
         enddo
@@ -1539,20 +1683,18 @@
 
       write(6,"('  step    =',i4,' (model timestep (seconds))',
      |  i4)") step
-#ifdef MPI      
       write(6,"('  ntask_lon = ',i2,' (number of mpi tasks in ',
      |  'longitude dimension)')") ntask_lon
       write(6,"('  ntask_lat = ',i2,' (number of mpi tasks in ',
      |  'latitude  dimension)')") ntask_lat
       write(6,"('  total tasks = ntask_lon*ntask_lat = ',i4)")
      |  ntask
-#endif
 !
 ! Primary histories:
       if (len_trim(source) > 0) then
         write(6,"('  source  = ',a,/,4x,'(file or mss path',
      |    ' containing source history)')") trim(source)      
-        write(6,"('  source_start = ',(i3,',',i2,',',i2),
+        write(6,"('  source_start = ',(i3,',',i2,',',i2,',',i2),
      |    ' (model time of source history)')")
      |    source_start
       endif
@@ -1560,15 +1702,15 @@
       write(6,"('  output (primary history output files) = ',
      |  /,(4x,a,', ',a))") 
      |  (trim(output(i)),i=1,n)
-      n = (size(start)-count(start==ispval))/3
-      write(6,"('  start (model start times) =',
-     |  /,4(4x,i3,',',i2,',',i2))") (start(:,i),i=1,n)
-      n = (size(stop)-count(stop==ispval))/3
-      write(6,"('  stop (model stop times) =',
-     |  /,4(4x,i3,',',i2,',',i2))") (stop(:,i),i=1,n)
-      n = (size(hist)-count(hist==ispval))/3
-      write(6,"('  hist (primary history disk write frequencies) =',
-     |  /,4(4x,i3,',',i2,',',i2))") (hist(:,i),i=1,n)
+      n = (size(pristart)-count(pristart==ispval))/4
+      write(6,"('  pristart (model start times) =',
+     |  /,4(4x,i3,',',i2,',',i2,',',i2))") (pristart(:,i),i=1,n)
+      n = (size(pristop)-count(pristop==ispval))/4
+      write(6,"('  pristop (model stop times) =',
+     |  /,4(4x,i3,',',i2,',',i2,',',i2))") (pristop(:,i),i=1,n)
+      n = (size(prihist)-count(prihist==ispval))/4
+      write(6,"('  prihist (primary history disk write frequencies) =',
+     |  /,4(4x,i3,',',i2,',',i2,',',i2))") (prihist(:,i),i=1,n)
       write(6,"('  Maxmimum number of histories per primary file = ',
      |  i3)") mxhist_prim
 !
@@ -1576,7 +1718,7 @@
       if (len_trim(secsource) > 0) then
         write(6,"('  secsource  = ',a,/,4x,'(file or mss path',
      |    ' containing secsource history)')") trim(secsource)
-        write(6,"('  secsource_start = ',(i3,',',i2,',',i2),
+        write(6,"('  secsource_start = ',(i3,',',i2,',',i2,',',i2),
      |    ' (model time of secsource history)')")
      |    source_start
       endif
@@ -1585,18 +1727,18 @@
      |  write(6,"('  secout (secondary history output files)=',
      |    /,(4x,a,', ',a))") 
      |    (trim(secout(i)),i=1,n)
-      n = (size(secstart)-count(secstart==ispval))/3
+      n = (size(secstart)-count(secstart==ispval))/4
       if (n > 0)
      |  write(6,"('  secstart (secondary history start times) =',
-     |    /,4(4x,i3,',',i2,',',i2))") (secstart(:,i),i=1,n)
-      n = (size(secstop)-count(secstop==ispval))/3
+     |    /,4(4x,i3,',',i2,',',i2,',',i2))") (secstart(:,i),i=1,n)
+      n = (size(secstop)-count(secstop==ispval))/4
       if (n > 0)
      |  write(6,"('  secstop (secondary history stop times) =',
-     |    /,4(4x,i3,',',i2,',',i2))") (secstop(:,i),i=1,n)
-      n = (size(sechist)-count(sechist==ispval))/3
+     |    /,4(4x,i3,',',i2,',',i2,',',i2))") (secstop(:,i),i=1,n)
+      n = (size(sechist)-count(sechist==ispval))/4
       if (n > 0)
      |  write(6,"('  sechist (secondary history disk write',
-     |    ' frequencies) =',/,4(4x,i3,',',i2,',',i2))") 
+     |    ' frequencies) =',/,4(4x,i3,',',i2,',',i2,',',i2))") 
      |    (sechist(:,i),i=1,n)
       n = (size(secflds)-count(len_trim(secflds)==0))
       if (n > 0)
@@ -1722,14 +1864,14 @@
 !-----------------------------------------------------------------------
       subroutine validate_mtime(mtime,mxday,label)
 !
-! Validate a model time (day,hr,min) from input.
+! Validate a model time (day,hr,min,sec) from input.
 ! (may be start or stop time, or frequency,
 !  e.g., history write frequency)
 ! If there is a bad value, stop with error message.
 ! Label is used to print error msg (usually the keyword name
 !   from namelist)
 !
-      integer,intent(in) :: mtime(3),mxday
+      integer,intent(in) :: mtime(4),mxday
       character(len=*),intent(in) :: label
       integer :: ier
 !
@@ -1753,7 +1895,14 @@
 ! Minute:
       if (mtime(3) < 0 .or. mtime(3) > 59) then
         write(6,"(/,'>>> input ',a,': bad model minute: ',i5,
-     |    ' (must be >= 0 and <= 59)')") label,mtime(1)
+     |    ' (must be >= 0 and <= 59)')") label,mtime(3)
+        ier = 1
+      endif 
+!
+! Second:
+      if (mtime(4) < 0 .or. mtime(4) > 59) then
+        write(6,"(/,'>>> input ',a,': bad model second: ',i5,
+     |    ' (must be >= 0 and <= 59)')") label,mtime(4)
         ier = 1
       endif 
 !
@@ -1788,7 +1937,7 @@
 ! Validate times and values in user provided time series.
 !
 ! Args:
-      real,intent(in) :: constant,timedep(4,mxtimes)
+      real(rp),intent(in) :: constant,timedep(5,mxtimes)
       integer,intent(in) :: mxtimes
       integer,intent(out) :: ntimes
       character(len=*),intent(in) :: name
@@ -1804,44 +1953,46 @@
       ntimes = 0
       if (any(timedep /= spval)) then
 !
-! Time series must be provided in groups of 4 (day,hr,min,value):
+! Time series must be provided in groups of 5 (day,hr,min,sec,value):
         n = 0
         do i=1,mxtimes
-          do ii=1,4
+          do ii=1,5
             if (timedep(ii,i) /= spval) n = n+1
           enddo
         enddo
-        if (mod(n,4) /= 0) then
+        if (mod(n,5) /= 0) then
           write(6,"('>>> INPUT: must provide ',a,' in groups',
-     |      ' of 4: n=',i5,' mod(n,4)=',i5)") name,n,mod(n,4)
+     |      ' of 5: n=',i5,' mod(n,5)=',i5)") name,n,mod(n,5)
           call shutdown('validate_timedep')
         endif
         do i=1,mxtimes
           if (any(timedep(:,i) /= spval)) then
-            call validate_mtime(int(timedep(1:3,i)),mxday,name)
+            call validate_mtime(int(timedep(1:4,i)),mxday,name)
             ntimes = ntimes+1
           endif
         enddo ! i=1,mxtimes
-        nsec_start = mtime_to_nsec(start(:,1)) ! model start time
-        nsec_stop = mtime_to_nsec(stop(:,1))   ! model stop time
+        nsec_start = mtime_to_nsec(pristart(:,1)) ! model start time
+        nsec_stop = mtime_to_nsec(pristop(:,1))   ! model stop time
 !
 ! First time must be model start time:
         if (ntimes > 0) then
-          nsec = mtime_to_nsec(int(timedep(1:3,1)))
+          nsec = mtime_to_nsec(int(timedep(1:4,1)))
           if (nsec /= nsec_start) then
             write(6,"(/,'>>> INPUT: Please provide first value of ',a,
-     |        ' at model START time.')") trim(name)
+     |        ' at model PRISTART time.')") trim(name)
             call shutdown('validate_timedep')
           endif
 !
-! All times must be between START and STOP times:
+! All times must be between PRISTART and PRISTOP times:
           do i=1,ntimes
-            nsec = mtime_to_nsec(int(timedep(1:3,i)))
+            nsec = mtime_to_nsec(int(timedep(1:4,i)))
             if (nsec < nsec_start .or. 
      |          nsec > nsec_stop) then
-              write(6,"(/,'>>> INPUT: ',a,' time ',3i4,' is outside ',
-     |          'model START/STOP times: START=',3i4,' STOP=',3i4)")
-     |          trim(name),int(timedep(1:3,i)),start(:,1),stop(:,1)
+              write(6,"(/,'>>> INPUT: ',a,' time ',4i4,' is outside ',
+     |          'model PRISTART/PRISTOP times: PRISTART=',4i4,
+     |          ' PRISTOP=',4i4)")
+     |          trim(name),int(timedep(1:4,i)),
+     |          pristart(:,1),pristop(:,1)
               call shutdown('validate_timedep')
             endif 
           enddo
@@ -1850,13 +2001,13 @@
 ! Times must be increasing (assume non-spvals are from 1 to ntimes, 
 ! i.e., not interspersed with spvals):
         if (ntimes > 1) then
-          nsec0 = mtime_to_nsec(int(timedep(1:3,1)))
+          nsec0 = mtime_to_nsec(int(timedep(1:4,1)))
           do i=2,ntimes
-            nsec1 = mtime_to_nsec(int(timedep(1:3,i)))
+            nsec1 = mtime_to_nsec(int(timedep(1:4,i)))
             if (nsec0 >= nsec1) then
               write(6,"(/,'>>> INPUT: ',a,' times must increase',
-     |          '. Check time at i=',i3,' day,hr,min=',3i4,' and the',
-     |          ' time previous to i.')") name,i,int(timedep(1:3,i)) 
+     |          '. Check time at i=',i3,' day,hr,min,sec=',4i4,' and ',
+     |          'the time previous to i.')") name,i,int(timedep(1:4,i)) 
               call shutdown('validate_timedep')
             endif
             nsec0 = nsec1
@@ -1869,7 +2020,7 @@
         write(6,"('>>> INPUT: Please provide either constant or ',
      |    'time-dependent values for ',a,' (not both)')") trim(name)
         write(6,"(a,'=',e12.4,' ',a,'_time=',/,(6e12.4))")
-     |    trim(name),constant,trim(name),timedep(4,:)
+     |    trim(name),constant,trim(name),timedep(5,:)
         call shutdown('validate_timedep')
       endif
       end subroutine validate_timedep
@@ -1928,6 +2079,8 @@
      |  ntimes_ctpoten,'ctpoten')
       call validate_timedep(power,power_time,mxind_time,
      |  ntimes_power,'power')
+      call validate_timedep(bximf,bximf_time,mxind_time,
+     |  ntimes_bximf,'bximf')
       call validate_timedep(byimf,byimf_time,mxind_time,
      |  ntimes_byimf,'byimf')
       call validate_timedep(bzimf,bzimf_time,mxind_time,
@@ -2210,6 +2363,15 @@
         endif
       endif
 !
+! KP/GPI_NCFILE and SUBAUR_DATA must set if SAPS is turned on
+      if (saps) then
+        if (kp==spval .and. all(kp_time==spval) .and.
+     |    len_trim(gpi_ncfile)==0)
+     |    call shutdown('KP/GPI_NCFILE must set if SAPS is TRUE')
+        if (len_trim(subaur_data) == 0)
+     |    call shutdown('SUBAUR_DATA must set if SAPS is TRUE')
+      endif
+!
 ! Report to stdout for debug: 
 !     write(6,"(/,'inp_solar returning:')")
 !     write(6,"('potential_model=',a)") trim(potential_model)
@@ -2291,6 +2453,35 @@ c       endif
         write(6,"(/,'>>> CTMT data are available only at the ',
      |    '2.5-degree model resolution.')")
         call shutdown('CTMT_NCFILE not allowed at 5-deg resolution')
+      endif
+!
+! check for the compliance of nudging parameters
+      if (count(len_trim(nudge_ncfile)>0) > 0) then
+        if (nudge_refdate(1) == ispval) nudge_refdate(1) = start_year
+        if (nudge_refdate(2) == ispval) nudge_refdate(2) = start_day
+        if (any(nudge_sponge < 0))
+     |    call shutdown('NUDGE_SPONGE must be non-negative')
+        where (nudge_sponge == spval) nudge_sponge = 0
+        if (any(nudge_delta <= 0))
+     |    call shutdown('NUDGE_DELTA must be positive')
+        where (nudge_delta == spval) nudge_delta = 1
+        if (any(nudge_power <= 0))
+     |    call shutdown('NUDGE_POWER must be positive')
+        where (nudge_power == spval) nudge_power = 1
+        if (nudge_alpha < 0)
+     |    call shutdown('NUDGE_ALPHA must be non-negative')
+        if (nudge_alpha == spval) nudge_alpha = 0
+      else
+        if (len_trim(nudge_ncpre)>0 .or. len_trim(nudge_ncpost)>0 .or.
+     |    any(len_trim(nudge_flds)>0) .or.
+     |    any(nudge_lbc) .or. any(nudge_f4d) .or.
+     |    nudge_use_refdate .or. any(nudge_refdate/=ispval) .or.
+     |    any(nudge_sponge/=spval) .or. any(nudge_delta/=spval) .or.
+     |    any(nudge_power/=spval) .or. nudge_alpha/=spval)
+     |    call shutdown('NUDGE_NCFILE must set if any of '//
+     |    'NUDGE_NCPRE,NUDGE_NCPOST,NUDGE_FLDS,NUDGE_LBC,NUDGE_F4D,'//
+     |    'NUDGE_USE_REFDATE,NUDGE_REFDATE,NUDGE_SPONGE,NUDGE_DELTA,'//
+     |    'NUDGE_POWER,NUDGE_ALPHA is set')
       endif
 
       end subroutine inp_lbc

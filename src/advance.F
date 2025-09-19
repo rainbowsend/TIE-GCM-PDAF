@@ -16,10 +16,13 @@
 ! 23 DEC 2021: added option to supress tiegcm output
 ! 06 JUL 2023 removed unused variables
 ! 05 SEP 2024 print ETA
+! 18 SEP 2025: merged with TIE-GCM 3.0
 ! -----------------------------------------------------------------------------
       implicit none
 !
 ! Advance the model in time.
+!
+      logical :: cleanup
 !
       contains
 !-----------------------------------------------------------------------
@@ -30,10 +33,12 @@
       use fields_module
       use hist_module,only: nstep,modeltime
       use heelis_module,only: heelis
-      use wei05sc,only: weimer05       ! Weimer 2005 model
-      use input_module,only: start,step,idynamo=>dynamo,
+      use wei05sc,only: weimer05        ! Weimer 2005 model
+      use input_module,only: pristart,step,idynamo=>dynamo,
      |  calendar_advance,gpi_ncfile,potential_model,wei05sc_ncfile,
-     |  imf_ncfile,current_pg,current_kq,iamie,amie_ibkg,amiesh,amienh
+     |  imf_ncfile,current_pg,current_kq,iamie,amie_ibkg,
+     |  start_day,nudge_lbc,nudge_f4d,nudge_alpha,
+     |  doEclipse,eclipse_list
       use input_module,only: 
      |  power  ,power_time  ,ntimes_power, rd_power,
      |  ctpoten,ctpoten_time,ntimes_ctpoten, rd_ctpoten,
@@ -47,26 +52,23 @@
      |  f107   ,f107_time   ,ntimes_f107,
      |  f107a  ,f107a_time  ,ntimes_f107a
       use init_module,only: istep,uthr,iter,secs,iday,iyear
-      use cons_module,only: dt,re,
-     | rmassinv_o2,rmassinv_o1,rmassinv_he
-      use filter_module,only: filter
+      use cons_module,only: dt
       use qrj_module,only: init_sflux
       use magfield_module,only: sunloc_apex
       use pdynamo_module,only: pefield
       use aurora_module,only: aurora_cons
       use hdif_module,only: hdif1,hdif2
-      use current,only: noso_crrt,noso_crdens
+      use current,only: noso_crrt,noso_crdens,nscrrt_glb=>nscrrt
       use timing_module,only: timer,timing
       use mpitime_module,only: mpi_timer
       use gpi_module,only: rdgpi,getgpi,deallocate_gpi_module
       use imf_module,only: getimf
       use gswm_module,only: getgswm
-      use params_module,only: nlonp4,nlat,nlev
+      use params_module,only: nlonp4,nlat,
+     |  nlon,nlonp2,dlon,glon,glon0
       use amie_module,only: getamie,tiepot
-      use output,only: outhist
+      use output,only: outhist,output_hist
       use addfld_module,only: addfld
-      use lbc,only: tuvz_lbc
-
 #ifdef USE_PDAF
       use array_print_module, only: printMat
       use configuration, only: cfg_output
@@ -82,46 +84,51 @@
       use gpi_module,only: perturbe_gpi
       use imf_module,only: perturbe_imf
 #endif
+      use lbc,only: tuvz_lbc,t_lbc,u_lbc,v_lbc,z_lbc
+      use eclipse_module,only: read_eclipse_list,find_eclipse
+      use nudge_module,only:
+     |  nudge_check=>check,nudge_init=>init,
+     |  nudge_update=>update,nudge_finalize=>finalize,
+     |  nudge_nlb=>nlb,nudge_nf4d=>nf4d,
+     |  nudge_time=>time,nudge_itime=>itime,
+     |  ext_lbc=>lbc,ext_f4d=>f4d,lbc_flag,
+     |  f4d_idx,wrap,maxlev,latbeg,latend,lonbeg,lonend,
+     |  offbeg,offend,lonbeg1,lonend1,hori_weight,vert_weight
 !
 ! Routines and timing for parallel dynamo (pdynamo.F):
       use pdynamo_module,only: dynamo_inputs,pdynamo,pefield,
      |  prepare_phig3d,nmlat0,phihm 
+      use diags_module,only: mkdiag_JQR
 
-#if defined(INTERCOMM) || defined(CISMAH)
-      use cism_coupling_module,only: import, export, geng,gflx
-#endif
+      use mage_coupling_module,only: import_mage, export_mage,
+     |  process_import
 
 !
 ! current due to plasma pressure & gravity -> add to RHS of dynamo    
       use magpres_g, only: magpres_grav
 !
-#ifdef MPI
+
       use mpi_f08
       use mpi_module,only: 
-     |  mytid,mp_gather2root,mp_bndlats,ntask,lat0,lat1,lon0,lon1,
-     |  mp_bndlons,mp_polelats,mp_periodic_f4d, COMM_model
+     |  mytid,mp_bndlats,ntask,lat0,lat1,lon0,lon1,
+     |  mlat0,mlat1,mlon0,mlon1,mp_scatter_phim,
+     |  mp_bndlons,mp_polelats,mp_periodic_f4d,TIEGCM_WORLD
+      use getapex_module,only: apxparm
 !
       implicit none
-#else
-      implicit none
-      integer :: lat0=1,lat1=nlat, lon0=1,lon1=nlonp4
-      integer :: mytid=0,ntask=1
-#endif
+
 #ifdef VT
 #include <VT.inc>
 #endif
 !
 ! Local:
-      integer :: i,j,itmp,ier,
-     |  iprint
-#if defined(INTERCOMM) || defined(CISMAH)
-      integer :: cmodeltime(4) !CISM coupling time
-#endif
-      real :: fmin,fmax
+      integer :: i,j,itmp,ier,iprint,month,day,modelsec,ifld,k
+      integer :: cmodeltime(4) !MAGE coupling time
+      real :: fmin,fmax,delta,fac1,fac2
       integer(kind=8) :: nsecs ! current model time in seconds,
                                ! including model day
-      logical :: time2write,wrprim,wrsech,newseries_sech,
-     |  newseries_prim,iseries_sech,iseries_prim
+      logical :: time2write,wrprim,wrsech,newseries_sech,newseries_prim
+      integer :: iseries_sech,iseries_prim
       real :: secs_per_step,dday,
      |  time0,          time1,
      |  time0_step,     time1_step,
@@ -132,6 +139,11 @@
      |  time0_prep,     time1_prep,
      |  time0_init,     time1_init
       character(len=3) :: timing_type
+      logical :: adv
+      real,dimension(mlon0:mlon1,mlat0:mlat1) :: nscrrt
+      real,dimension(:,:),allocatable :: wt,ext_fld,tmp_lbc
+      real,dimension(:,:,:),allocatable :: tmp_f4d,nclbc
+      real,dimension(:,:,:,:),allocatable :: ncf4d
 !
       logical :: debug=.false.
       integer :: lev0=1,lev1=nlevp1
@@ -140,19 +152,22 @@
 ! External:
       logical,external :: wrhist,time2print
       real,external :: hp_from_bz_swvel,hp_from_kp,ctpoten_from_kp
+      integer,external :: mtime_to_secs
 !
 #ifdef VT
 !     code = 115 ; state = 'advance' ; activity='ModelCode'
       call vtbegin(115,ier)
 #endif
 !
+! A hook for handling OS signals (SIGINT/SIGTERM)
+      call register_signal_handler
+!
       write(6,"(/,'Enter advance: iter=',i10,' nstep=',i10)") iter,nstep
       call timer(time0_init,time1_init,'INIT',0,0)
 !
 ! Init timestep index, modeltime, and nsecs:
       istep = 0
-      modeltime(1:3) = start(:,1)
-      modeltime(4) = 0
+      modeltime = pristart(:,1)
       call modeltime_to_nsecs(modeltime,nsecs) ! sets nsecs, includes day
       timing_type = 'sys'
       if (timing%rtc) timing_type = 'rtc'
@@ -177,25 +192,14 @@
       end if
 #endif
       if (time2write) then
-#ifdef MPI
 !
 ! If an initial run, echo source history to output before first time step. 
-!   Because only subdomains are read by rdhist, and only the root task 
-!   outputs histories, the subdomain data must be gathered to the root.
 !
-        call mp_gather2root(itc,'prim')
-        if (mytid==0) call outhist(istep,modeltime)
-#else
         do i=1,nf4d
           foutput(:,lon0:lon1,lat0:lat1,i) =
      |      f4d(i)%data(:,lon0:lon1,lat0:lat1,itc)
         enddo
-        tlbc_glb(lon0:lon1,lat0:lat1) = tlbc(lon0:lon1,lat0:lat1)
-        ulbc_glb(lon0:lon1,lat0:lat1) = ulbc(lon0:lon1,lat0:lat1)
-        vlbc_glb(lon0:lon1,lat0:lat1) = vlbc(lon0:lon1,lat0:lat1)
-
         call outhist(istep,modeltime)
-#endif
 !
 ! nstep may be zero if user only wants to copy source history:
         if (nstep==0) then
@@ -212,6 +216,29 @@
       itmp = itp
       itp = itc
       itc = itmp
+!
+! Initialize eclipse list with external data
+      if (doEclipse) call read_eclipse_list(eclipse_list)
+!
+! glon0 corresponds to lon0:lon1 (1,nlonp4)
+      glon0(3:nlonp2) = glon
+      glon0(1:2) = glon(1)-(/2,1/)*dlon
+      glon0(nlonp2+1:nlonp4) = glon(nlon)+(/1,2/)*dlon
+
+! this nudge_lbc is from nudge module, not from input module
+      if (any(nudge_lbc) .or. any(nudge_f4d)) then
+        if (mytid == 0) call nudge_check
+        call nudge_init
+
+        if (latbeg < latend) then
+          allocate(wt(lon0:lon1,latbeg:latend))
+          allocate(ext_fld(lon0:lon1,latbeg:latend))
+          allocate(tmp_lbc(lon0:lon1,latbeg:latend))
+          allocate(tmp_f4d(maxlev,lon0:lon1,latbeg:latend))
+          allocate(nclbc(lon0:lon1,latbeg:latend,nudge_nlb))
+          allocate(ncf4d(maxlev,lon0:lon1,latbeg:latend,nudge_nf4d))
+        endif
+      endif
 !
       call timer(time0_init,time1_init,'INIT',1,0) ! end init timing
       if (timing%level >= 2)
@@ -231,15 +258,9 @@
       iter=iter+1
       istep = istep+1
       nsecs = nsecs+step
-!
-#ifdef USE_PDAF
-c       call print_loc('MAIN LOOP ADVANCE')
-#endif
-!
 
-#if defined(INTERCOMM) || defined(CISMAH)
-      cmodeltime=modeltime             !!! CISM ad hoc coupling
-#endif
+      cmodeltime=modeltime             !!! MAGE coupling
+
       call nsecs_to_modeltime(nsecs,modeltime) ! increments modeltime(4)
       secs = mod(iter*int(dt),86400)
       uthr = secs/3600.
@@ -248,7 +269,7 @@ c       call print_loc('MAIN LOOP ADVANCE')
 ! Update calendar day and sun's location and declination:
 ! (sub advance_day also updates sfeps)
 !
-      if (calendar_advance > 0) call advance_day
+      if (calendar_advance > 0) call advance_day(adv)
 #ifdef USE_PDAF
 c       call print_time_info('computing time step: ')
 c      call advance_nc_debug
@@ -263,28 +284,27 @@ c      call advance_nc_debug
 ! is zero, interpolation is not done.
 !
       if (ntimes_ctpoten > 0) 
-     |  call set_index(ctpoten_time,ntimes_ctpoten,nsecs,ctpoten,
-     |    'ctpoten')
+     |  call set_index(ctpoten_time,ntimes_ctpoten,nsecs,ctpoten)
       if (ntimes_power > 0) 
-     |  call set_index(power_time,ntimes_power,nsecs,power,'power')
+     |  call set_index(power_time,ntimes_power,nsecs,power)
       if (ntimes_bximf > 0) 
-     |  call set_index(bximf_time,ntimes_bximf,nsecs,bximf,'bximf')
+     |  call set_index(bximf_time,ntimes_bximf,nsecs,bximf)
       if (ntimes_byimf > 0) 
-     |  call set_index(byimf_time,ntimes_byimf,nsecs,byimf,'byimf')
+     |  call set_index(byimf_time,ntimes_byimf,nsecs,byimf)
       if (ntimes_bzimf > 0) 
-     |  call set_index(bzimf_time,ntimes_bzimf,nsecs,bzimf,'bzimf')
+     |  call set_index(bzimf_time,ntimes_bzimf,nsecs,bzimf)
       if (ntimes_swden > 0) 
-     |  call set_index(swden_time,ntimes_swden,nsecs,swden,'swden')
+     |  call set_index(swden_time,ntimes_swden,nsecs,swden)
       if (ntimes_swvel > 0) 
-     |  call set_index(swvel_time,ntimes_swvel,nsecs,swvel,'swvel')
+     |  call set_index(swvel_time,ntimes_swvel,nsecs,swvel)
       if (ntimes_al > 0) 
-     |  call set_index(al_time,ntimes_al,nsecs,al,'al')
+     |  call set_index(al_time,ntimes_al,nsecs,al)
       if (ntimes_kp > 0) 
-     |  call set_index(kp_time,ntimes_kp,nsecs,kp,'kp')
+     |  call set_index(kp_time,ntimes_kp,nsecs,kp)
       if (ntimes_f107 > 0) 
-     |  call set_index(f107_time,ntimes_f107,nsecs,f107,'f107')
+     |  call set_index(f107_time,ntimes_f107,nsecs,f107)
       if (ntimes_f107a > 0) 
-     |  call set_index(f107a_time,ntimes_f107a,nsecs,f107a,'f107a')
+     |  call set_index(f107a_time,ntimes_f107a,nsecs,f107a)
 !
 ! Get gpi data if necessary:
       if (len_trim(gpi_ncfile) > 0) then
@@ -308,7 +328,7 @@ c      call advance_nc_debug
       if (len_trim(imf_ncfile) > 0) then
         iprint = 0
         if (istep==1) iprint = 1
-        call getimf(iyear,iday,int(secs),istep,iprint)
+        call getimf(iyear,iday,int(secs),istep)
 #ifdef USE_PDAF
       else
         ! if getimf is not called add perturbance only once
@@ -355,12 +375,11 @@ c      call advance_nc_debug
 !
 ! Get GSWM tidal boundary data:
 !
-      call getgswm(istep,iyear,iday,secs)
+      call getgswm(istep,iday,secs)
 !
 ! Update lower boundaries of t,u,v,z:
 !
-      call tuvz_lbc(istep,iyear,iday,secs,itp)
-!
+      call tuvz_lbc(istep,iday,secs)
 !
 #ifdef USE_PDAF
 ! Compute and write initial ensemble
@@ -388,13 +407,94 @@ c      call advance_nc_debug
 
 !       call write_parmeter_handling(.true.)
 #endif
+
+! Update eclipse elements array if necessary:
+      if (doEclipse) then
+        call to_month_day(iyear,iday,month,day)
+        call find_eclipse(iyear,month,day)
+      endif
 !
-#if defined(INTERCOMM) || defined(CISMAH)
+      modelsec = mtime_to_secs(modeltime)-start_day*86400
+
+! read external fields and interpolate spatially
+! this sets up both ext_lbc and ext_f4d
+      if (any(nudge_lbc) .or. any(nudge_f4d)) then
+        if (latbeg<latend .and. nudge_time(nudge_itime+1)<modelsec)
+     |    call nudge_update(modelsec)
+        delta = nudge_time(nudge_itime+1)-nudge_time(nudge_itime)
+        fac1 = (nudge_time(nudge_itime+1)-modelsec)/delta
+        fac2 = (modelsec-nudge_time(nudge_itime))/delta
+      endif
+
+! lower boundary based on nudge data
+      if (any(nudge_lbc)) then
+        if (latbeg<latend .and.
+     |    nudge_time(nudge_itime)<=modelsec .and.
+     |    modelsec<=nudge_time(nudge_itime+1)) then
+
+! temporal interpolation
+          nclbc = fac1*ext_lbc(:,:,1,:)+fac2*ext_lbc(:,:,2,:)
+          wt = nudge_alpha*hori_weight
+
+          do ifld = 1,nudge_nlb
+            if (lbc_flag(ifld)) then
+              select case (ifld)
+                case (1)
+                  tmp_lbc = t_lbc(lon0:lon1,latbeg:latend)
+                case (2)
+                  tmp_lbc = u_lbc(lon0:lon1,latbeg:latend)
+                case (3)
+                  tmp_lbc = v_lbc(lon0:lon1,latbeg:latend)
+                case (4)
+                  tmp_lbc = z_lbc(lon0:lon1,latbeg:latend)
+              endselect
+
+              ext_fld = wt*nclbc(:,:,ifld)+(1-wt)*tmp_lbc
+
+! find the corresponding grid and replace the model fields
+              if (wrap) then
+                tmp_lbc = ext_fld
+              else
+                if (lonbeg<lonend .and. offbeg==offend)
+     |            tmp_lbc(lonbeg:lonend,:) = ext_fld(lonbeg:lonend,:)
+
+                if (lonbeg<lonend .and. offbeg+1==offend) then
+                  tmp_lbc(lonbeg:lonend1,:) = ext_fld(lonbeg:lonend1,:)
+                  tmp_lbc(lonbeg1:lonend,:) = ext_fld(lonbeg1:lonend,:)
+                endif
+
+                if (lonbeg>lonend .and. offbeg==offend+1) then
+                  tmp_lbc(lonbeg:lon1,:) = ext_fld(lonbeg:lon1,:)
+                  tmp_lbc(lon0:lonend,:) = ext_fld(lon0:lonend,:)
+                endif
+              endif
+
+              select case (ifld)
+                case (1)
+                  t_lbc(lon0:lon1,latbeg:latend) = tmp_lbc
+                case (2)
+                  u_lbc(lon0:lon1,latbeg:latend) = tmp_lbc
+                case (3)
+                  v_lbc(lon0:lon1,latbeg:latend) = tmp_lbc
+                case (4)
+                  z_lbc(lon0:lon1,latbeg:latend) = tmp_lbc
+              endselect
+            endif
+          enddo
+        endif
+      endif
 !
-! Receive aurora parameters from the M-I coupler for CISM
+! Receive aurora parameters from the M-I coupler for MAGE
 !
-      call import
-#endif
+      call import_mage
+!
+! Send conductance and neutral wind current to M-I coupler for MAGE
+!
+      call export_mage(cmodeltime)
+!
+! Process the imported data
+!
+      call process_import
 !
 ! Report to stdout:
       if (time2print(nstep,istep)) then
@@ -406,22 +506,22 @@ c      call advance_nc_debug
      |      (current_time-ref_time)/60.0,
      |      (real(nstep-istep)*(current_time-ref_time)/real(istep))/60.0
         else
-          write(6,"('Step ',i8,' of ',i8,' mtime=',3i3)")
-     |      istep,nstep,modeltime(1:3)
+          write(6,"('Step ',i8,' of ',i8,' mtime=',4i3)")
+     |      istep,nstep,modeltime
         endif
 !
 ! GPI data run:
         if (len_trim(gpi_ncfile) > 0) then
-          write(6,"('GPI run: mtime=',3i3,' power=',f8.3,' ctpoten=',
-     |      f8.3,' f107=',f8.3,' f107a=',f8.3)")modeltime(1:3),
+          write(6,"('GPI run: mtime=',4i3,' power=',f8.3,' ctpoten=',
+     |      f8.3,' f107=',f8.3,' f107a=',f8.3)")modeltime,
      |      power,ctpoten,f107,f107a
         endif
 !
 ! Weimer/IMF/OMNI data run:
         if (len_trim(imf_ncfile) > 0) then
-          write(6,"('IMF run: mtime=',3i3,' bx=',f8.3,' by=',f8.3,
+          write(6,"('IMF run: mtime=',4i3,' bx=',f8.3,' by=',f8.3,
      |      ' bz=',f8.3,' swvel=',f8.3,' swden=',f8.3)")
-     |      modeltime(1:3),bximf,byimf,bzimf,swvel,swden
+     |      modeltime,bximf,byimf,bzimf,swvel,swden
         endif
       endif ! time2print
 !
@@ -436,7 +536,7 @@ c      call advance_nc_debug
 ! Update aurora parameters:
       iprint = 0
       if (istep==1) iprint = 1
-      call aurora_cons(iprint,iyear,iday,secs)
+      call aurora_cons(iprint)
       if (debug) write(6,"('advance after aurora_cons')")
 !
 ! init_sflux calls ssflux and euvac (see qrj_module.F):
@@ -457,24 +557,24 @@ c      call advance_nc_debug
 ! Calculate vc, barm, xnmbar, and z (tn,o2,o1,vn are input).
 !
       call addiag(
-     |  tn   (levd0,lond0,latd0,itp),   ! in
-     |  o2   (levd0,lond0,latd0,itp),   ! in
-     |  o1   (levd0,lond0,latd0,itp),   ! in
-     |  he   (levd0,lond0,latd0,itp),   ! in
-     |  vn   (levd0,lond0,latd0,itp),   ! in
-     |  vc   (levd0,lond0,latd0,itp),   ! out
-     |  barm   (levd0,lond0,latd0,itp),     ! out
-     |  xnmbar (levd0,lond0,latd0),     ! out
-     |  xnmbari(levd0,lond0,latd0),     ! out
-     |  xnmbarm(levd0,lond0,latd0),     ! out
-     |  z      (levd0,lond0,latd0,itp),     ! out (note itp is output)
-     |  zg     (levd0,lond0,latd0),         ! out (z with varying grav)
-     |  n2     (levd0,lond0,latd0),         ! out (1.-o2-o1-he)
+     |  tn     (levd0,lond0,latd0,itp), ! in
+     |  o2     (levd0,lond0,latd0,itp), ! in
+     |  o1     (levd0,lond0,latd0,itp), ! in
+     |  he     (levd0,lond0,latd0,itp), ! in
+     |  vn     (levd0,lond0,latd0,itp), ! in
+     |  vc     (levd0,lond0,latd0,itp), ! out
+     |  mbar   (levd0,lond0,latd0,itp), ! out
+     |  barm   (levd0,lond0,latd0,itp), ! out
+     |  xnmbar (levd0,lond0,latd0,itp), ! out
+     |  xnmbari(levd0,lond0,latd0,itp), ! out
+     |  scht   (levd0,lond0,latd0,itp), ! out
+     |  schti  (levd0,lond0,latd0,itp), ! out
+     |  z      (levd0,lond0,latd0,itp), ! out (note itp is output)
+     |  zg     (levd0,lond0,latd0),     ! out (z with varying grav)
+     |  n2     (levd0,lond0,latd0),     ! out (1.-o2-o1-he)
      |  lon0,lon1,1,nlevp1,lat0,lat1)
 !
       if (debug) write(6,"('advance after addiag')")
-!
-#ifdef MPI
 !
 ! Define boundary latitudes -1,0 across the south pole, and
 !   nlat+1,nlat+2 across the north pole:
@@ -496,12 +596,6 @@ c      call advance_nc_debug
         call mp_bndlats(f4d,nf4d,itp)
         call mp_bndlons(f4d,nf4d,itp)
       endif ! ntask==1
-#else
-      call mk_polelat( 0,1,itp)
-      call mk_polelat(-1,2,itp)
-      call mk_polelat(nlat+1,nlat  ,itp)
-      call mk_polelat(nlat+2,nlat-1,itp)
-#endif
 !
 ! For Z, itc==itp (itp was set by addiag):
       z(:,:,:,itc) = z(:,:,:,itp)
@@ -509,20 +603,22 @@ c      call advance_nc_debug
 !
 ! Horizontal diffusion, first step:
 ! hdif1 saves nrh and kmh at lats -2->nlat in nrh and kmh using
-!   fields un_nm and vn_nm at j+1 and j+2, and tn_nm and barm at j+1.
-! hdif1 calls mp_bnd[lat,lons]_kmh
+!   fields un_nm and vn_nm at j+1 and j+2, and tn_nm and mbar at j+1.
+! hdif1 calls mp_bnd[lats,lons]_f3d
 !
       call hdif1(
      |  tn_nm(levd0,lond0,latd0,itp),
      |  un_nm(levd0,lond0,latd0,itp),
      |  vn_nm(levd0,lond0,latd0,itp),
-     |  barm (levd0,lond0,latd0,itp),
+     |  mbar (levd0,lond0,latd0,itp),
+     |  fnrh (levd0,lond0,latd0),
+     |  fkmh (levd0,lond0,latd0),
      |  1,nlevp1,lon0,lon1,lat0,lat1)
       if (debug) write(6,"('advance after hdif1')")
 !
 ! Horizontal diffusion, second step:
-! hdif2 saves 3d diagnostics f3d (fkldt,u,v,o2,o) at j+1 (0->37)
-! hdif2: WRITE (fkldt,u,v,o2,o1) <- READ (tn_nm,un_nm,vn_nm,o2_nm,o1_nm)
+! hdif2 saves 3d diagnostics f3d (fkldt,u,v,o2,o,he) at j+1 (0->37)
+! hdif2: WRITE (fkldt,u,v,o2,o1,he) <- READ (tn_nm,un_nm,vn_nm,o2_nm,o1_nm,he_nm)
 ! The kld terms will be used later in hdif3.
 !
 ! Call method 1 (contiguous actual args, lat loop inside):
@@ -534,12 +630,14 @@ c      call advance_nc_debug
      |  o2_nm(levd0,lond0,latd0,itp),  ! 4d input
      |  o1_nm(levd0,lond0,latd0,itp),  ! 4d input
      |  he_nm(levd0,lond0,latd0,itp),  ! 4d input
-     |  kldt ,      ! 3d output
-     |  kldu ,      ! 3d output
-     |  kldv ,      ! 3d output
-     |  kldo2,      ! 3d output
-     |  kldo1,      ! 3d output
-     |  kldhe,      ! 3d output
+     |  fnrh (levd0,lond0,latd0),      ! 3d input
+     |  fkmh (levd0,lond0,latd0),      ! 3d input
+     |  kldt (levd0,lond0,latd0),      ! 3d output
+     |  kldu (levd0,lond0,latd0),      ! 3d output
+     |  kldv (levd0,lond0,latd0),      ! 3d output
+     |  kldo2(levd0,lond0,latd0),      ! 3d output
+     |  kldo1(levd0,lond0,latd0),      ! 3d output
+     |  kldhe(levd0,lond0,latd0),      ! 3d output
      |  1,nlevp1,lon0,lon1,lat0,lat1)
       if (debug) write(6,"('advance after hdif2')")
 !
@@ -562,9 +660,8 @@ c      call advance_nc_debug
         if (debug) write(6,"('advance after weimer05: istep=',i4)")istep
 
 !       call addfld ('W05_EPOT','Weimer05 Electric Potential',
-!    |    'V',phihm,'mlon',1,nmlonp1,'mlat',1,nmlat,0)
-!       call addfld ('W05_FAC','Weimer05 Field-Aligned Current',
-!    |    ' ',wei05sc_fac,'mlon',1,nmlonp1,'mlat',1,nmlat,0)
+!    |    'V',phihm(mlon0:mlon1,mlat0:mlat1),
+!    |    'mlon',mlon0,mlon1,'mlat',mlat0,mlat1,0)
 
       elseif (potential_model == 'HEELIS') then
         call heelis
@@ -605,6 +702,9 @@ c      call advance_nc_debug
 ! Call dynamo if namelist idynamo > 0:
 !
       if (idynamo > 0) then
+        if (calendar_advance > 0) then
+          if (adv) call apxparm(iyear+iday/366.)
+        endif
 !
 ! Calculate addition to electrodynamo RHS (current due to plasma 
 ! pressure and gravity)
@@ -630,9 +730,8 @@ c      call advance_nc_debug
 ! Prepare neutral inputs for parallel dynamo:
 ! Calculate vertical velocity wn:
         call calc_wn(
-     |    tn   (lev0:lev1,lon0:lon1,lat0:lat1,itp),
      |    w    (lev0:lev1,lon0:lon1,lat0:lat1,itp),
-     |    barm (lev0:lev1,lon0:lon1,lat0:lat1,itp),
+     |    scht (lev0:lev1,lon0:lon1,lat0:lat1,itp),
      |    wn   (lev0:lev1,lon0:lon1,lat0:lat1),     ! output
      |    1,nlevp1,lon0,lon1,lat0,lat1)
 
@@ -665,6 +764,11 @@ c      call advance_nc_debug
 !
         if (current_kq > 0) then
           if (mytid==0) call noso_crrt
+!
+! Save JQR: Upward current density (2d)
+!
+          call mp_scatter_phim(nscrrt_glb,nscrrt)
+          call mkdiag_JQR('JQR',nscrrt,mlon0,mlon1,mlat0,mlat1)
           call noso_crdens
         endif
 !
@@ -679,13 +783,50 @@ c      call advance_nc_debug
      |      idynamo
       endif ! idynamo
 !
+      if (any(nudge_f4d)) then
+        if (latbeg<latend .and.
+     |    nudge_time(nudge_itime)<=modelsec .and.
+     |    modelsec<=nudge_time(nudge_itime+1)) then
+
+          ncf4d = fac1*ext_f4d(:,:,:,1,:)+fac2*ext_f4d(:,:,:,2,:)
+
+          do ifld = 1,nudge_nf4d
+            if (nudge_f4d(ifld)) then
+              tmp_f4d = f4d(f4d_idx(ifld))%
+     |          data(1:maxlev,lon0:lon1,latbeg:latend,itc)
+
+              do k = 1,maxlev
+                wt = nudge_alpha*hori_weight*vert_weight(k,ifld)
+                ext_fld = wt*ncf4d(k,:,:,ifld)+(1-wt)*tmp_f4d(k,:,:)
+
+                if (wrap) then
+                  tmp_f4d(k,:,:) = ext_fld
+                else
+                  if (lonbeg<lonend .and. offbeg==offend)
+     |              tmp_f4d(k,lonbeg:lonend,:) =
+     |              ext_fld(lonbeg:lonend,:)
+
+                  if (lonbeg<lonend .and. offbeg+1==offend) then
+                    tmp_f4d(k,lonbeg:lonend1,:) =
+     |                ext_fld(lonbeg:lonend1,:)
+                    tmp_f4d(k,lonbeg1:lonend,:) =
+     |                ext_fld(lonbeg1:lonend,:)
+                  endif
+
+                  if (lonbeg>lonend .and. offbeg==offend+1) then
+                    tmp_f4d(k,lonbeg:lon1,:) = ext_fld(lonbeg:lon1,:)
+                    tmp_f4d(k,lon0:lonend,:) = ext_fld(lon0:lonend,:)
+                  endif
+                endif
+              enddo
+
+              f4d(f4d_idx(ifld))%
+     |          data(1:maxlev,lon0:lon1,latbeg:latend,itc) = tmp_f4d
+            endif
+          enddo
+        endif
+      endif
 !
-#if defined(INTERCOMM) || defined(CISMAH)
-!
-! Send conductance and neutral wind current to M-I coupler for CISM
-!
-      call export(cmodeltime)
-#endif
 #ifdef VT
 !       code = 127 ; state = 'timestep' ; activity='ModelCode'
         call vtend(127,ier)
@@ -728,60 +869,27 @@ c       call test_reg_grid_interpolator
       call timer(time0_step,time1,'STEP',1,0) ! suspend step timing for i/o
       time1_step = time1
 !
-!
-! If its time to write a history, root task must gather subdomain
-! data from slave tasks before writing the history. This is done
-! by sub mp_gather2root. Only root task writes to the history.
+! If its time to write a history, all tasks write to the history.
 !
       if (time2write) then
         if (wrprim) call timer(time0_phist,time1,'PHIST',0,0) ! resume phist
         if (wrsech) call timer(time0_shist,time1_shist,'SHIST',0,0)
-#ifdef MPI
-        if (ntask > 1) then
-          if (debug) write(6,"('advance call mp_gather2root prim')")
-          call mp_gather2root(itc,'prim')
-          if (debug) write(6,"('advance after mp_gather2root prim')")
-          if (wrsech) call mp_gather2root(itc,'sech')
-          if (debug) write(6,"('advance after mp_gather2root sech')")
-        elseif (ntask==1) then
-          do i=1,nf4d
-            foutput(:,lon0:lon1,lat0:lat1,i) =
-     |        f4d(i)%data(:,lon0:lon1,lat0:lat1,itc)
-          enddo
-          tlbc_glb(lon0:lon1,lat0:lat1) = tlbc(lon0:lon1,lat0:lat1)
-          ulbc_glb(lon0:lon1,lat0:lat1) = ulbc(lon0:lon1,lat0:lat1)
-          vlbc_glb(lon0:lon1,lat0:lat1) = vlbc(lon0:lon1,lat0:lat1)
-          tlbc_nm_glb(lon0:lon1,lat0:lat1)=tlbc_nm(lon0:lon1,lat0:lat1)
-          ulbc_nm_glb(lon0:lon1,lat0:lat1)=ulbc_nm(lon0:lon1,lat0:lat1)
-          vlbc_nm_glb(lon0:lon1,lat0:lat1)=vlbc_nm(lon0:lon1,lat0:lat1)
-        endif
-!
-! Saving amieoutput here from master only - G. Lu, Aug. 27, 2003
-        if (iamie > 0) then
-          call prep_output(1,nlevp1,lon0,lon1,lat0,lat1)
-          if (mytid==0) call amieoutput
-        endif
-#else
-!
-! Update foutput if serial non-MPI run:
 !
         do i=1,nf4d
           foutput(:,lon0:lon1,lat0:lat1,i) =
      |      f4d(i)%data(:,lon0:lon1,lat0:lat1,itc)
         enddo
-        tlbc_glb(lon0:lon1,lat0:lat1) = tlbc(lon0:lon1,lat0:lat1)
-        ulbc_glb(lon0:lon1,lat0:lat1) = ulbc(lon0:lon1,lat0:lat1)
-        vlbc_glb(lon0:lon1,lat0:lat1) = vlbc(lon0:lon1,lat0:lat1)
-        tlbc_nm_glb(lon0:lon1,lat0:lat1) = tlbc_nm(lon0:lon1,lat0:lat1)
-        ulbc_nm_glb(lon0:lon1,lat0:lat1) = ulbc_nm(lon0:lon1,lat0:lat1)
-        vlbc_nm_glb(lon0:lon1,lat0:lat1) = vlbc_nm(lon0:lon1,lat0:lat1)
-#endif
-! Write the history to output file:
-        if (mytid==0) then
-          if (debug) write(6,"('advance root call outhist')")
-          call outhist(istep,modeltime)
-          if (debug) write(6,"('advance after root call outhist')")
+!
+! Saving amieoutput here - G. Lu, Aug. 27, 2003
+        if (iamie > 0) then
+          call prep_output
+          call amieoutput
         endif
+!
+! Write the history to output file:
+        if (debug) write(6,"('advance call outhist')")
+        call outhist(istep,modeltime)
+        if (debug) write(6,"('advance after call outhist')")
 !
 ! Update i/o timing:
         if (wrprim) then
@@ -791,15 +899,18 @@ c       call test_reg_grid_interpolator
         if (wrsech) call timer(time0_shist,time1_shist,'SHIST',1,0)
       endif ! time2write
       call timer(time0_step,time1,'STEP',0,0) ! resume step timing (non-MPI)
-#ifdef MPI
+!
+! Only Intel and GNU can capture SIGINT/SIGTERM and perform cleanup work
+! Other compilers will simply skip this check
+      if (cleanup) then
+! A new volume will always be created for primary histories (restart)
+        call output_hist(istep,.true.)
+        call shutdown('Received termination signal, exiting ...')
+      endif
 !
 ! Periodic points for all updated fields:
       call mp_periodic_f4d(itc)
       if (debug) write(6,"('advance after mp_periodic_f4d')")
-#else
-! Non-mpi serial run:
-      call set_periodic_f4d(itc)
-#endif
 !
 #ifdef USE_PDAF
       call compute_and_write_results("advance")
@@ -825,12 +936,11 @@ c       call test_reg_grid_interpolator
 !
 ! Return for next time step:
       if (istep < nstep) then
-#ifdef MPI
         if (ntask > 1) then
-          call mpi_barrier(COMM_model,ier)
+          call mpi_barrier(TIEGCM_WORLD,ier) ! is this necessary??
           if (debug) write(6,"('advance after end of step barrier')")
         endif
-#endif
+!
         if (debug) write(6,"('advance end iteration for step ',i4)")
      |    istep
         call cpu_time(current_time)
@@ -839,6 +949,10 @@ c       call test_reg_grid_interpolator
 
       call deallocate_gpi_module
 !
+      if (any(nudge_lbc) .or. any(nudge_f4d)) then
+        if (latbeg < latend) call nudge_finalize
+      endif
+!
 #ifdef VT
 !     code = 115 ; state = 'advance' ; activity='ModelCode'
       call vtend(115,ier)
@@ -846,14 +960,15 @@ c       call test_reg_grid_interpolator
 !
       end subroutine advance
 !-----------------------------------------------------------------------
-      subroutine advance_day
+      subroutine advance_day(adv)
 !
 ! Advance calendar day if needed. Also update sfeps.
 !
-      use init_module,only: iter,iyear,iday,sfeps,sin_sundec,
-     |  cos_sundec
+      use init_module,only: iter,iyear,iday,sfeps,sin_sundec,cos_sundec
       use cons_module,only: dt,pi
       implicit none
+!
+      logical,intent(out) :: adv
 !
 ! Local:
       integer :: idayit,idayprev,iyearprev,iyr4,iyr100,iyr400,lpyr,ienda
@@ -893,10 +1008,13 @@ c       call test_reg_grid_interpolator
 !
         write(6,"('Advancing day (previous,present)=',4i5,' sfeps=',
      |   e12.4)") idayprev,iyearprev,iday,iyear,sfeps
+        adv = .true.
+      else
+        adv = .false.
       endif
       end subroutine advance_day
 !-----------------------------------------------------------------------
-      subroutine set_index(rindex,ntimes,msecs,outindex,name)
+      subroutine set_index(rindex,ntimes,msecs,outindex)
 !
 ! User has provided time-dependent ctpoten (ctpoten_time) and/or
 !   power (power_time) via namelist input. This routine interpolates
@@ -912,13 +1030,12 @@ c       call test_reg_grid_interpolator
 !
 ! Args:
       real,intent(in) :: 
-     |  rindex(4,mxind_time) ! user input times and values (day,hour,min,value)
+     |  rindex(5,mxind_time) ! user input times and values (day,hour,min,sec,value)
       integer,intent(in) :: 
      |  ntimes  ! number of valid time/values in rindex(:,1:ntimes)
       integer(kind=8),intent(in) ::
      |  msecs   ! current model time in seconds
       real,intent(out) :: outindex ! output interpolated value
-      character(len=*),intent(in) :: name
 !
 ! Local:
       integer :: i
@@ -929,34 +1046,34 @@ c       call test_reg_grid_interpolator
       real,external :: finterp_bigints
 !
 ! If model time is beyond last rindex time, use last rindex time:
-      nsec1 = mtime_to_nsec(int(rindex(1:3,ntimes)))
+      nsec1 = mtime_to_nsec(int(rindex(1:4,ntimes)))
       if (msecs > nsec1) then
-        outindex = rindex(4,ntimes)
+        outindex = rindex(5,ntimes)
         goto 100
       endif 
 !
 ! Bracket model time:
       do i=1,ntimes-1
-        nsec0 = mtime_to_nsec(int(rindex(1:3,i)))
-        nsec1 = mtime_to_nsec(int(rindex(1:3,i+1)))
+        nsec0 = mtime_to_nsec(int(rindex(1:4,i)))
+        nsec1 = mtime_to_nsec(int(rindex(1:4,i+1)))
 !
 ! If model time is at a provided time, interpolation is not necessary:
         if (nsec0 == msecs) then
-          outindex = rindex(4,i)
+          outindex = rindex(5,i)
           goto 100
         endif
         if (nsec1 == msecs) then
-          outindex = rindex(4,i+1)
+          outindex = rindex(5,i+1)
           goto 100
         endif
 !
 ! Interpolate to model time msecs:
         if (msecs >= nsec0 .and. msecs <= nsec1) then
           if (indices_interp > 0) then
-            outindex = finterp_bigints(rindex(4,i),rindex(4,i+1),nsec0,
+            outindex = finterp_bigints(rindex(5,i),rindex(5,i+1),nsec0,
      |        nsec1,msecs)
           else
-            outindex = rindex(4,i)
+            outindex = rindex(5,i)
           endif
           goto 100
         endif
@@ -968,43 +1085,37 @@ c       call test_reg_grid_interpolator
      |  i10)") msecs
       write(6,"('ntimes=',i3)") ntimes
       do i=1,ntimes
-        write(6,"('  i=',i3,' ntimes=',i3,' day,hr,min=',3f7.2,
-     |    ' value=',e12.4)") i,ntimes,rindex(1:3,i),rindex(4,i)
+        write(6,"('  i=',i3,' ntimes=',i3,' day,hr,min,sec=',4f7.2,
+     |    ' value=',e12.4)") i,ntimes,rindex(1:4,i),rindex(5,i)
       enddo
       call shutdown('set_index')
 !
 ! Report to stdout:
  100  continue
-!     write(6,"('set_index: ',a,' = ',e12.4)") name,outindex
+!     write(6,"('set_index: ',e12.4)") outindex
       end subroutine set_index
 !-----------------------------------------------------------------------
-      subroutine calc_wn(tn,omega,barm,wn,lev0,lev1,lon0,lon1,lat0,lat1)
-      use cons_module,only: gask,grav
+      subroutine calc_wn(omega,scht,wn,lev0,lev1,lon0,lon1,lat0,lat1)
 !
 ! Calculate vertical velocity wn for dynamo inputs:
 !
 ! Args:
       integer,intent(in) :: lev0,lev1,lon0,lon1,lat0,lat1
       real,dimension(lev0:lev1,lon0:lon1,lat0:lat1),intent(in) ::
-     |  tn,omega,barm
+     |  omega,scht
       real,dimension(lev0:lev1,lon0:lon1,lat0:lat1),intent(out) :: wn
 !
 ! Local:
       integer :: j,i,k
-      real,dimension(lev0:lev1,lon0:lon1,lat0:lat1) :: scheight
 
-!     write(6,"('calc_wn: tn=',2e12.4,' omega=',2e12.4,' barm=',
-!    |  2e12.4)") minval(tn),maxval(tn),minval(omega),maxval(omega),
-!    |  minval(barm),maxval(barm)
+!     write(6,"('calc_wn: omega=',2e12.4,' scht=',2e12.4)")
+!    |  minval(omega),maxval(omega),minval(scht),maxval(scht)
 !
       do j=lat0,lat1
         do i=lon0,lon1
           do k=lev0,lev1-1
-            scheight(k,i,j) = gask*tn(k,i,j)/(.5*(barm(k,i,j)+
-     |        barm(k+1,i,j))*grav)
-            wn(k,i,j)=0.5*(omega(k,i,j)+omega(k+1,i,j))*scheight(k,i,j)
+            wn(k,i,j)=0.5*(omega(k,i,j)+omega(k+1,i,j))*scht(k,i,j)
           enddo
-          scheight(lev1,i,j) = 0.
           wn(lev1,i,j) = 0.
         enddo
       enddo
@@ -1029,5 +1140,48 @@ c       call test_reg_grid_interpolator
 !    |  ' emlam3d, and emz3d')")
 
       end subroutine nodynamo
+!-----------------------------------------------------------------------
+      subroutine register_signal_handler
+! Register signal handler to OS to catch SIGINT/SIGTERM
+! Intel and GNU have different forms of function calls
+! Other compilers are not supported yet
+
+#ifdef INTEL
+      use ifport,only: signal,sigint,sigterm
+#endif
+
+#ifdef GNU
+! Defined by POSIX, hard code here
+      integer,parameter :: sigint=2,sigterm=15
+#endif
+
+      integer :: ret
+
+#ifdef INTEL
+      ret = signal(sigint,signal_handler,-1)
+      ret = signal(sigterm,signal_handler,-1)
+#endif
+
+#ifdef GNU
+      ret = signal(sigint,signal_handler)
+      ret = signal(sigterm,signal_handler)
+#endif
+
+      cleanup = .false.
+
+      end subroutine register_signal_handler
+!-----------------------------------------------------------------------
+      function signal_handler(signum) result(ret)
+! This handler does only one thing: change the cleanup flag to true
+! Note that only with Intel and GNU this function will be called
+! Otherwise the cleanup flag stays false all the time
+
+      integer,intent(in) :: signum
+      integer :: ret
+
+      cleanup = .true.
+      ret = 0
+
+      end function signal_handler
 !-----------------------------------------------------------------------
       end module advance_module

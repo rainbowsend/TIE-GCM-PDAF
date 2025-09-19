@@ -13,6 +13,7 @@
 ! 21 JUN 2022: put hard coded constants used in the computation of
 !              beta 1,3,5,8 and 9 to module variables. This allows the
 !              calibration of the corresponding reaction rates.
+! 18 SEP 2025: merged with TIE-GCM 3.0
 ! -----------------------------------------------------------------------------
       use params_module,only: nlevp1,nlonp4
 !
@@ -54,7 +55,7 @@
 !
 ! Neutral chemistry:
       real ::
-     |  beta2 = 5.0E-12,  ! N2D + O2 -> NO  + O1D + 1.84 eV
+!     |  beta2 = 5.0E-12,  ! N2D + O2 -> NO  + O1D + 1.84 eV
      |  beta4 = 7.0E-13,  ! N2D + O  -> N4S + O   + 2.38 eV
      |  beta6 = 7.0E-11,  ! N2D + NO -> N2  + O   + 5.63 eV
      |  beta7 = 1.06E-5   ! N2D      -> N4S + hv
@@ -83,6 +84,7 @@
 !
 ! Neutral chemistry:
      |  beta1, ! N4S + O2 -> NO  + O + 1.4  eV
+     |  beta2, ! N2D + O2 -> NO  + O1D + 1.84 eV
      |  beta3, ! N4S + NO -> N2  + O + 3.25 eV
      |  beta5, ! N2D + e  -> N4S + e + 2.38 eV
      |  beta8, ! NO  + hv -> N4S + O
@@ -96,7 +98,7 @@
      |  rkm12, ! O + O + N2 -> O2 + N2
      |  tvib
 !
-! Matrices for O2,O (set by comp_o2o.F, used by comp.F) 
+! Matrices for O2,O,He (set by comp_o2o.F, used by comp.F) 
       real,allocatable :: fs(:,:,:,:,:) ! (i,k,3,0:3,j)
 !
       contains
@@ -130,6 +132,9 @@
       allocate(beta1(nlevp1,lon0:lon1,lat0:lat1),stat=istat)
       if (istat /= 0) write(6,"('>>> alloc_tdep: error allocating',
      |  ' beta1: stat=',i3)") istat
+      allocate(beta2(nlevp1,lon0:lon1,lat0:lat1),stat=istat)
+      if (istat /= 0) write(6,"('>>> alloc_tdep: error allocating',
+     |  ' beta2: stat=',i3)") istat
       allocate(beta3(nlevp1,lon0:lon1,lat0:lat1),stat=istat)
       if (istat /= 0) write(6,"('>>> alloc_tdep: error allocating',
      |  ' beta3: stat=',i3)") istat
@@ -175,7 +180,7 @@
 !
 ! Calculate temperature-dependent reaction rates (called at each latitude)
 !
-      use input_module,only: f107  ! 10.7 cm flux (from input and/or gpi)
+      use input_module,only: duff,f107  ! 10.7 cm flux (from input and/or gpi)
       use init_module,only: sfeps  ! flux variation from orbital excentricity
       use cons_module,only: check_exp
 !
@@ -269,6 +274,13 @@
 !
 ! beta1: N4S + O2 -> NO  + O + 1.4  eV
           beta1(k,i,lat) = beta1_0*exp(-3600./tn(k,i))
+!
+! New reaction rate from Duff et al. (2003), suggested by Sheng et al. (2017)
+          if (duff) then
+            beta2(k,i,lat) = 6.2e-12*tn(k,i)/300.
+          else
+            beta2(k,i,lat) = 5e-12
+          endif
 !
 ! beta3: N4S + NO -> N2  + O + 3.25 eV
           beta3(k,i,lat) = beta3_0*sqrt(tn(k,i)/300.)

@@ -1,4 +1,3 @@
-#include "defs.h"
 !      
       module amie_module
 !      
@@ -10,31 +9,20 @@
       use addfld_module,only: addfld
       implicit none
 !
-#ifdef SUN
-#include "netcdf3.inc"
-#else
-#include "netcdf.inc"
-#endif 
+#include <netcdf.inc>
 !
 ! Define parameters for AMIE input data file:
       integer,parameter :: 
-     |  mxgdays = 10,     ! maximum number of days of AMIE data
-     |  mxtimes = 5881,   ! maximum number of times of AMIE data per day
-     |  ithtrns = 30,     ! corresponding to trans lat 40-deg
-     |  ithmx = 55,       ! maximum number of latitudes of AMIE data
-     |  jmxm = 2*ithmx-1, ! maximum number of global latitudes
-     |  lonmx = 36        ! maximum number of longitudes of AMIE data
-      integer :: lonp1,latp1
+     |  mxtimes = 5881   ! maximum number of times of AMIE data per day
+      integer :: lonp1,latp1,
+     |  ithmx, ! number of latitudes of AMIE data if extended to equator
+     |  jmxm   ! number of global latitudes (=2*ithmx-1)
       integer,dimension(mxtimes) :: year,month,day,jday
 ! Define AMIE output fields
       real :: 
      |  tiepot(nmlonp1,nmlat),tieekv(nmlonp1,nmlat),
      |  tieefx(nmlonp1,nmlat),potg(nlonp1,0:nlatp1),
      |  efxg(nlonp1,0:nlatp1),ekvg(nlonp1,0:nlatp1)
-! defined output AMIE fields in TGCM geographic grid
-      real,dimension(nlonp4,nlat) :: 
-     |  potg_sech, ekvg_sech, efxg_sech
-      real,dimension(nmlonp1,-2:nlevp1) :: tiepot_sech
 !
 ! Define fields for AMIE input data file:
 ! electric potential in Volt
@@ -46,13 +34,13 @@
 ! amie_pcp_nh(sh) are AMIE polar-cap potential drop
 ! Saved AMIE outputs with suffix _amie
 !
-      real,allocatable,dimension(:,:,:),save :: ! (lonp1,latp1,ntimes)
+      real,allocatable,dimension(:,:,:) :: ! (lonp1,latp1,ntimes)
      |  amie_pot_nh, amie_pot_sh, amie_ekv_nh, amie_ekv_sh,
      |  amie_efx_nh, amie_efx_sh
-      real,allocatable,dimension(:,:),save ::   ! (lonp1,latp1)
+      real,allocatable,dimension(:,:) ::   ! (lonp1,latp1)
      |  pot_nh_amie,pot_sh_amie, ekv_nh_amie,ekv_sh_amie,
      |  efx_nh_amie,efx_sh_amie
-      real, allocatable,dimension(:),save :: ! (ntimes)
+      real, allocatable,dimension(:) :: ! (ntimes)
      |  amie_cusplat_nh, amie_cuspmlt_nh, amie_hpi_nh,
      |  amie_pcp_nh, amie_nh_ut,
      |  amie_cusplat_sh, amie_cuspmlt_sh, amie_hpi_sh,
@@ -61,6 +49,9 @@
      |  cusplat_nh_amie, cuspmlt_nh_amie, cusplat_sh_amie,
      |  cuspmlt_sh_amie, hpi_sh_amie, hpi_nh_amie, pcp_sh_amie,
      |  pcp_nh_amie, crad(2), phida(2)
+!
+! Auroral boundaries from AMIE energy flux, 1 for SH, 2 for NH
+      real,dimension(2,nlon) :: aurbound
 !
       contains 
 !-----------------------------------------------------------------------
@@ -93,10 +84,12 @@
 ! Local:
       character(len=80) :: dskfile
       integer :: istat,ntimes,ncid,ndims,nvars,ngatts,idunlim,ier
-      integer :: id_lon,id_lat,id_time,lon,lat,mlt,
-     |    idv_year,idv_mon,idv_day,idv_jday,
-     |    idv_iter,idv_ut,idv_lon,idv_lat,idv_pot,idv_ekv,
-     |    idv_efx,idv_cusplat,idv_cuspmlt,idv_hpi,idv_pcp
+      integer :: id_lon,id_lat,id_time,
+     |    idv_lat,idv_year,idv_mon,idv_day,idv_jday,idv_ut,
+     |    idv_pot,idv_ekv,idv_efx,
+     |    idv_cusplat,idv_cuspmlt,idv_hpi,idv_pcp
+      real :: dlat
+      real,dimension(:),allocatable :: amielat
 !
 ! Acquire mss file:
       dskfile = ' '
@@ -126,6 +119,15 @@
       if (istat /= NF_NOERR) call rpt_ncerr(istat,
      |  'rdamie_nh: Error getting AMIE latitude dimension')
       write(6,"('lonp1=',i3,' latp1=',i3)") lonp1,latp1
+!
+! Get AMIE latitude and set module grid size
+      allocate(amielat(latp1))
+      istat = nf_inq_varid(ncid,'lat',idv_lat)
+      istat = nf_get_var_double(ncid,idv_lat,amielat)
+      dlat = (amielat(1)-amielat(latp1))/(latp1-1)
+      ithmx = int(90/dlat)+1
+      jmxm = 2*ithmx-1
+      deallocate(amielat)
 !
 ! Get time dimension:
       istat = nf_inq_unlimdim(ncid,id_time)
@@ -282,10 +284,12 @@
 ! Local:
       character(len=80) :: dskfile
       integer :: istat,ntimes,ncid,ndims,nvars,ngatts,idunlim,ier
-      integer :: id_lon,id_lat,id_time,lon,lat,mlt,
-     |    idv_year,idv_mon,idv_day,idv_jday,
-     |    idv_iter,idv_ut,idv_lon,idv_lat,idv_pot,idv_ekv,
-     |    idv_efx,idv_cusplat,idv_cuspmlt,idv_hpi,idv_pcp
+      integer :: id_lon,id_lat,id_time,
+     |    idv_lat,idv_year,idv_mon,idv_day,idv_jday,idv_ut,
+     |    idv_pot,idv_ekv,idv_efx,
+     |    idv_cusplat,idv_cuspmlt,idv_hpi,idv_pcp
+      real :: dlat
+      real,dimension(:),allocatable :: amielat
 !
 ! Acquire mss file:
       dskfile = ' '
@@ -311,6 +315,15 @@
       istat = nf_inq_dimlen(ncid,id_lat,latp1)
       if (istat /= NF_NOERR) call rpt_ncerr(istat,
      |  'rdamie_sh: Error getting AMIE latitude dimension')
+!
+! Get AMIE latitude and set module grid size
+      allocate(amielat(latp1))
+      istat = nf_inq_varid(ncid,'lat',idv_lat)
+      istat = nf_get_var_double(ncid,idv_lat,amielat)
+      dlat = (amielat(1)-amielat(latp1))/(latp1-1)
+      ithmx = int(90/dlat)+1
+      jmxm = 2*ithmx-1
+      deallocate(amielat)
 !
 ! Get time dimension:
       istat = nf_inq_unlimdim(ncid,id_time)
@@ -467,24 +480,31 @@
 !
       use hist_module,only: modeltime
       use input_module,only: iamie,amiesh,amienh
-      use cons_module,only: pi,ylonm,ylatm
-      use magfield_module,only: im,jm,dim,djm
+      use cons_module,only: pi,ylonm,ylatm,rtd
+      use magfield_module,only: im,jm,dim,djm,rlatm,
+     |  sunlons  ! geomag. dipole longitude of subsol. point from subroutine sunloc_apex
+      use mpi_module,only: lon0,lon1,lat0,lat1,mlon0,mlon1,mlat0,mlat1
 !
 ! Args:
       integer,intent(in) :: iyear,iday,iutsec,amie_ibkg,iprint
 !
 ! Local:
+      real,parameter :: ab_efx = 0.02
       real :: 
      |   potm(lonp1,jmxm),efxm(lonp1,jmxm),ekvm(lonp1,jmxm),
      |   alat(jmxm),alon(lonp1),alatm(jmxm),alonm(lonp1)
-      integer :: ier,lw,liw,isign,intpol(2)
+      integer :: ier,lw,liw,intpol(2)
       integer,allocatable :: iw(:)
       real,allocatable :: w(:)
       integer :: i,j,ndmon_nl(13),ndmon_lp(13),nonleap
       integer :: nn, iset, iset1, m, mp1, n, amie_debug,amieday
       integer :: iboxcar,inpt
-      real    :: model_ut, denoma, f1, f2, fmin, fmax, maxefx
+      real    :: model_ut, denoma, f1, f2, maxefx
       real    :: del,xmlt,dmlat,dlatm,dlonm,dmltm,rot,dtr
+!
+! defined output AMIE fields in TGCM geographic grid
+      real,dimension(nlonp4,lat0:lat1) :: 
+     |  potg_sech, ekvg_sech, efxg_sech
 !   
 ! Data: GSWM data given at the middle of each month 
 !       -> day of year for this data assuming non-leap year
@@ -494,63 +514,7 @@
       data ndmon_lp                                ! leap year
      |  /31,60,91,121,152,182,213,244,274,305,335,366,397/ 
 !
-! Reading Charley Barth's auroral modification factor
-      integer, parameter:: nxtimes=47
-      integer :: nxyear,nxday(nxtimes)
-      real :: fxfact_nh, fxfact_sh,fxtime,fxtime1,fxtime2
-      real, dimension(nxtimes):: ut_nh,ut_sh,fx_nh,fx_sh
 ! 
-! External:
-      real,external :: finterp
-!
-      nxyear = 1998
-      nxday(1:nxtimes)=(/267,
-     |  267, 267, 267, 267, 267, 267, 267,
-     |  267, 267, 267, 267, 267, 267, 267,
-     |  267, 268, 268, 268, 268, 268, 268, 
-     |  268, 268, 268, 268, 268, 268, 268, 
-     |  268, 268, 269, 269, 269, 269, 269, 
-     |  269, 269, 269, 269, 269, 269, 269, 
-     |  269, 269, 269, 270/)
-      ut_nh(1:nxtimes)=(/0.0,
-     |   0.68872, 2.28569, 3.88347, 5.47933, 7.07654, 8.67133, 
-     |   10.2672, 11.8640, 13.4619, 15.0575, 16.6542, 18.2520, 
-     |   19.8473, 21.4437, 23.0409, 0.63913, 2.23508, 3.83221, 
-     |   5.42711, 7.02325, 8.62048, 10.2171, 11.8147, 13.4118, 
-     |   15.0064, 16.6022, 18.1989, 19.7967, 21.3921, 22.9884, 
-     |   0.58565, 2.18393, 3.78000, 5.37563, 6.97244, 8.56865, 
-     |   10.1659, 11.7654, 13.3620, 14.9582, 16.5557, 18.1509,  
-     |   19.7470, 21.3442, 22.9422,  0./)
-      fx_nh(1:nxtimes)=(/1.0,
-     |  0.954679, 1.01677, 0.805276, 0.662938, 0.680216, 1.09095, 
-     |  0.883288,0.972496, 0.720709, 0.579112, 0.818075, 1.28912, 
-     |   1.35952, 1.36740,  1.03170,  1.34414,  1.53157, 0.90830, 
-     |  0.824193, 1.10184,  1.35307, 0.999406, 0.788716, 0.76273, 
-     |  0.647832, 0.57241,  0.52249,  1.48004,  2.36089, 1.86270,  
-     |   1.87322, 1.80098,  1.57992,  1.33901,  1.21373, 1.42878, 
-     |   1.28782,  1.2731,  1.31435,  1.13873, 0.984014, 1.04712,
-     |   1.48459, 1.75276,  1.94827,  1./)
-
-      ut_sh(1:nxtimes)=(/0.0,
-     |  0.104409, 1.70090,  3.29847,  4.89378,  6.49047, 8.08820,  
-     |   9.68356, 11.2801,  12.8777,  14.4745,  16.0726, 17.6666, 
-     |   19.2649, 20.8609,  22.4578,  0.05568,  1.65123, 3.24788,  
-     |   4.84236, 6.44144,  8.03825,  9.63280,  11.2301, 12.8267,  
-     |   14.4227, 16.0197,  17.6161,  19.2119,  20.8103, 22.4062,  
-     |   0.02522, 1.59759,  3.19667,  4.79183,  6.38823, 7.98401, 
-     |   9.58092, 11.1789,  12.7793,  14.3752,  15.9723, 17.5671,
-     |   19.1629, 20.7597,  22.3572,  0./)
-
-      fx_sh(1:nxtimes)=(/1.0,
-     |  0.544252, 0.487370, 0.572375, 0.605849, 0.605344, 0.776822, 
-     |  0.895618, 0.641604, 0.590224, 0.638560, 0.739044, 0.863948,  
-     |   1.22977,  1.16256, 0.881014, 0.669191, 0.617876, 0.498846, 
-     |  0.998803, 0.826644, 0.899562,  1.41258,  1.05342, 0.972168,  
-     |   1.00838,  1.50718,  2.00560,  2.01770,  1.85613,  1.31682, 
-     |  0.920968,  1.64630,  2.33071,  1.96759,  1.83485,  1.79565, 
-     |   1.74479,  1.52049,  1.76034,  1.85011,  1.32154,  1.19636,
-     |   1.28152, 1.42212,  1.49638,  1./)
-!
       if (iprint > 0) then
         write(6,"(/,72('-'))")
         write(6,"('GETAMIE:')")
@@ -578,80 +542,17 @@
 !       call shutdown('getamie')
 !     endif
       if (modeltime(3).lt.0.or.modeltime(3).gt.59) then
-        write(6,"('>>> getamie: bad imin=',3i4)") modeltime(3)
+        write(6,"('>>> getamie: bad imin=',i4)") modeltime(3)
         call shutdown('getamie')
       endif
       if (modeltime(4).lt.0.or.modeltime(4).gt.59) then
-        write(6,"('>>> getamie: bad isec=',3i4)") modeltime(4)
+        write(6,"('>>> getamie: bad isec=',i4)") modeltime(4)
         call shutdown('getamie')
       endif
 !     model_ut = (modeltime(1)-amieday)*24. + float(iutsec)/3600.
       model_ut = float(iutsec)/3600.
 
       maxefx=50.
-      if (iyear==2004 .and. amieday==314 .and. abs(model_ut-7.333)<0.1) 
-     |      maxefx=21.
-      if (iyear==2004 .and. amieday==314 .and. abs(model_ut-8.833)<0.1) 
-     |      maxefx=14.
-      if (iyear==2004 .and. amieday==318) maxefx=10.
-      if (iyear==2004 .and. amieday==318 .and. model_ut < 5.75) 
-     |      maxefx=3.
-      if (iyear==2004 .and. amieday==318 .and. abs(model_ut-4.75)<0.1) 
-     |      maxefx=1.
-      if (iyear==2004 .and. amieday==318 .and. abs(model_ut-21.0)<0.1) 
-     |      maxefx=2.
-
-! Find out the multiplication factor from Charley Barth
-      fxfact_nh = 1.
-      fxfact_sh = 1.
-      if (nxyear == iyear) then
-! For the southern hemisphere
-	iset = 0
-	iset1 = nxtimes
-        do i=1,nxtimes
-          fxtime=(nxday(i)-iday)*24.+ut_nh(i)
-	  if (fxtime < model_ut) iset=i
-	enddo
-	iset1 = iset + 1
-	if (iset==0) iset=1
-	if (iset==nxtimes) iset1=iset
-        fxtime1=(iday-nxday(iset))*24.+ut_nh(iset)
-        fxtime2=(iday-nxday(iset1))*24.+ut_nh(iset1)
-	denoma = fxtime2 - fxtime1
-	if (denoma == 0.) then
-	  f1 = 1.
-	  f2 = 0.
-	else
-!	  f1 = (fxtime2-model_ut)/denoma
-!	  f2 = (model_ut-fxtime1)/denoma
-	  f1 = (fxtime2-(model_ut+(modeltime(1)-jday(i))*24.))/denoma
-	  f2 = (model_ut+(modeltime(1)-jday(i))*24.-fxtime1)/denoma
-	endif
-	fxfact_nh = f1*fx_nh(iset)+f2*fx_nh(iset1)
-! For the southern hemisphere
-	iset = nxtimes
-	iset1 = nxtimes
-        do i=1,nxtimes
-          fxtime=(nxday(i)-iday)*24.+ut_sh(i)
-!	  if (fxtime < model_ut) iset=i
-	  if (fxtime < model_ut+(modeltime(1)-jday(i))*24.) iset=i
-	enddo
-	iset1 = iset + 1
-	if (iset==nxtimes) iset1=iset
-        fxtime1=(iday-nxday(iset))*24.+ut_sh(iset)
-        fxtime2=(iday-nxday(iset1))*24.+ut_sh(iset1)
-	denoma = fxtime2 - fxtime1
-	if (denoma == 0.) then
-	  f1 = 1.
-	  f2 = 0.
-	else
-!	  f1 = (fxtime2-model_ut)/denoma
-!	  f2 = (model_ut-fxtime1)/denoma
-	  f1 = (fxtime2-(model_ut+(modeltime(1)-jday(i))*24.))/denoma
-	  f2 = (model_ut+(modeltime(1)-jday(i))*24.-fxtime1)/denoma
-	endif
-	fxfact_sh = f1*fx_sh(iset)+f2*fx_sh(iset1)
-      endif
 ! 
 ! Interpolate AMIE data to modeltime iutsec
 ! amie_ibkg = 0  use real UT AMIE data
@@ -715,17 +616,16 @@
       if (inpt > 0) write(6,"('maxefx = ',f4.1,
      |	 '  Bad efx points SH= ',i3)")maxefx,inpt
 
-          denoma = amie_sh_ut(iset1) - amie_sh_ut(iset)
+          denoma = (amie_sh_ut(iset1)+jday(iset1)*24.) - 
+     |             (amie_sh_ut(iset)+jday(iset)*24.)
           if (denoma == 0.) then
             f1 = 1.
             f2 = 0.
           else
-!           f1 = (amie_sh_ut(iset1) - model_ut)/denoma
-!           f2 = (model_ut - amie_sh_ut(iset))/denoma
-            f1 = (amie_sh_ut(iset1) - (model_ut+(modeltime(1)-
-     |             jday(iset1))*24.))/denoma
-            f2 = (model_ut+(modeltime(1)-jday(iset1))*24. - 
+            f1 = (model_ut+(modeltime(1)-jday(iset))*24. - 
      |             amie_sh_ut(iset))/denoma
+            f2 = (amie_sh_ut(iset1) - (model_ut+(modeltime(1)-
+     |             jday(iset1))*24.))/denoma
           endif
 !       write(6,"('getamie: AMIE SH Data n,iset,modeltime,f1,f2 =',
 !    |    4i5,2f5.2)")n,iset,modeltime(1),jday(iset1),f1,f2
@@ -866,17 +766,16 @@
       if (inpt > 0) write(6,"('maxefx = ',f4.1,
      |	 '  Bad efx points NH= ',i3)")maxefx,inpt
 
-          denoma = amie_nh_ut(iset1) - amie_nh_ut(iset)
+          denoma = (amie_nh_ut(iset1)+jday(iset1)*24.) - 
+     |             (amie_nh_ut(iset)+jday(iset)*24.)
           if (denoma == 0.) then
             f1 = 1.
             f2 = 0.
           else
-!           f1 = (amie_nh_ut(iset1) - model_ut)/denoma
-!           f2 = (model_ut - amie_nh_ut(iset))/denoma
-            f1 = (amie_nh_ut(iset1) - (model_ut+(modeltime(1)-
-     |             jday(iset1))*24.))/denoma
-            f2 = (model_ut+(modeltime(1)-jday(iset1))*24. - 
+            f1 = (model_ut+(modeltime(1)-jday(iset))*24. - 
      |             amie_nh_ut(iset))/denoma
+            f2 = (amie_nh_ut(iset1) - (model_ut+(modeltime(1)-
+     |             jday(iset1))*24.))/denoma
           endif
 !       write(6,"('getamie: AMIE NH Data model_day,model_ut,amie_day,',
 !    |    'amie_ut,f1,f2,iset,iset1 =',i4,f7.1,i4,f7.1,2f5.2,2i3)")
@@ -973,25 +872,6 @@
         enddo
       enddo
       if (inpt > 0) write(6,"('Total bad efx points NH = ',i3)")inpt
-! Multiply Barth's factor for auroral fluxes
-      if (nxyear==iyear) then
-        do j=1,19
-          do i=1,lonp1
-            if (ekv_nh_amie(i,j) > 2.5)
-     |               ekv_nh_amie(i,j) = 1.5*ekv_nh_amie(i,j)
-            if (ekv_sh_amie(i,j) > 2.5)
-     |               ekv_sh_amie(i,j) = 1.5*ekv_sh_amie(i,j)
-          enddo
-        enddo
-      endif
-      fxfact_nh = 1.
-      fxfact_sh = 1.
-      if (fxfact_nh > 1. .or. fxfact_sh > 1.) then
-        write(6,"('Barth Multiplication factors = ',2i5,2f7.3)")
-     |    iyear, nxyear, fxfact_nh, fxfact_sh
-        efx_nh_amie(:,:) = efx_nh_amie(:,:)*fxfact_nh
-        efx_sh_amie(:,:) = efx_sh_amie(:,:)*fxfact_sh
-      endif
 !
 !  The OLTMAX latitude also defines the co-latitude theta0, which in
 !   turn determines crit1(+2.5deg) and crit2(-12.5deg) which are used
@@ -1069,8 +949,11 @@
 !     enddo
 
 ! mlongitude starts from 180 degree
-      rot = 250./15. - iutsec/3600.
-      dmltm = 24./float(lonmx)
+!     rot = 250./15. - iutsec/3600.
+      rot = sunlons(1)*rtd
+      if (rot < 0.) rot = rot+360.     ! 0 to 360 degrees
+      rot = rot/15.                    ! convert from degree to hrs
+      dmltm = 24./float(lonp1-1)
       do i=1,lonp1
         xmlt = (i-1)*dmltm - rot + 24.
         xmlt = AMOD(xmlt,24.)
@@ -1111,8 +994,8 @@ C  DMLAT=lat spacing in degrees of AMIE apex grid
       dtr = pi/180.
       DMLAT = 180. / FLOAT(jmxm-1)
       DLATM = DMLAT*dtr
-      DLONM = 2.*PI/FLOAT(lonmx)
-      DMLTM = 24./FLOAT(lonmx)
+      DLONM = 2.*PI/FLOAT(lonp1-1)
+      DMLTM = 24./FLOAT(lonp1-1)
 C     ****
 C     ****     SET ARRAY YLATM (LATITUDE VALUES FOR GEOMAGNETIC GRID
 C     ****
@@ -1167,11 +1050,11 @@ C  Convert from TGCM distorted magnetic grid to geographic one
 !    |    DIM(1,0),DJM(1,0),IMAXGP,IMAXMP,IMAXG,JMAXG+2,IMAXM,JMAXM)
 
        call mag2geo(tiepot(1,1),potg(1,0),im(1,0),jm(1,0),
-     |    dim(1,0),djm(1,0),nlonp1,nmlonp1,nlon,nlat+2,nmlon,nmlat)
+     |    dim(1,0),djm(1,0),nlonp1,nmlonp1,nlon,nlat+2)
        call mag2geo(tieekv(1,1),ekvg(1,0),im(1,0),jm(1,0),
-     |    dim(1,0),djm(1,0),nlonp1,nmlonp1,nlon,nlat+2,nmlon,nmlat)
+     |    dim(1,0),djm(1,0),nlonp1,nmlonp1,nlon,nlat+2)
        call mag2geo(tieefx(1,1),efxg(1,0),im(1,0),jm(1,0),
-     |    dim(1,0),djm(1,0),nlonp1,nmlonp1,nlon,nlat+2,nmlon,nmlat)
+     |    dim(1,0),djm(1,0),nlonp1,nmlonp1,nlon,nlat+2)
 C     ****
 C     ****     INSERT PERIODIC POINTS
 C     ****
@@ -1184,29 +1067,22 @@ C     ****
 ! temp - save the AMIE output in geographic grid
       amie_debug = 1
       if (amie_debug > 0) then
-!     do j=1,nmlat
-!       do i=1,nmlonp1
-!         tiepot_sech(i,:) = tiepot(i,j)
-!       enddo
-!       call addfld('TIEPOT',' ',' ',tiepot_sech(:,1:nlevp1),
-!    |    'mlon',1,nmlonp1,'mlev',1,nlevp1,j)
-!     enddo
 ! tiepot(nmlonp1,nmlat)
 !       call addfsech_ij('TIEPOT',' ',' ',tiepot,1,nmlonp1,1,nmlat)
 !       call addfsech_ij('TIEEKV',' ',' ',tieekv,1,nmlonp1,1,nmlat)
 !       call addfsech_ij('TIEEFX',' ',' ',tieefx,1,nmlonp1,1,nmlat)
 
-        call addfld('TIEPOT',' ',' ',tiepot,'mlon',1,nmlonp1,
-     |    'mlat',1,nmlat,0)
-        call addfld('TIEEKV',' ',' ',tieekv,'mlon',1,nmlonp1,
-     |    'mlat',1,nmlat,0)
-        call addfld('TIEEFX',' ',' ',tieefx,'mlon',1,nmlonp1,
-     |    'mlat',1,nmlat,0)
+        call addfld('TIEPOT',' ',' ',tiepot(mlon0:mlon1,mlat0:mlat1),
+     |    'mlon',mlon0,mlon1,'mlat',mlat0,mlat1,0)
+        call addfld('TIEEKV',' ',' ',tieekv(mlon0:mlon1,mlat0:mlat1),
+     |    'mlon',mlon0,mlon1,'mlat',mlat0,mlat1,0)
+        call addfld('TIEEFX',' ',' ',tieefx(mlon0:mlon1,mlat0:mlat1),
+     |    'mlon',mlon0,mlon1,'mlat',mlat0,mlat1,0)
 
         do i=1,nlon
-          potg_sech(i+2,:) = potg(i,1:nlat)
-          ekvg_sech(i+2,:) = ekvg(i,1:nlat)
-          efxg_sech(i+2,:) = efxg(i,1:nlat)
+          potg_sech(i+2,:) = potg(i,lat0:lat1)
+          ekvg_sech(i+2,:) = ekvg(i,lat0:lat1)
+          efxg_sech(i+2,:) = efxg(i,lat0:lat1)
         enddo
         do i=1,2
           potg_sech(i,:) = potg_sech(nlon+i,:)
@@ -1220,18 +1096,33 @@ C     ****
 !       call addfsech_ij('EKVG',' ',' ',ekvg_sech,1,nlonp4,1,nlat)
 !       call addfsech_ij('EFXG',' ',' ',efxg_sech,1,nlonp4,1,nlat)
 
-        call addfld('POTG',' ',' ',potg_sech,'lon',1,nlonp4,
-     |    'lat',1,nlat,0)
-        call addfld('EKVG',' ',' ',ekvg_sech,'lon',1,nlonp4,
-     |    'lat',1,nlat,0)
-        call addfld('EFXG',' ',' ',efxg_sech,'lon',1,nlonp4,
-     |    'lat',1,nlat,0)
+        call addfld('POTG',' ',' ',potg_sech(lon0:lon1,:),
+     |    'lon',lon0,lon1,'lat',lat0,lat1,0)
+        call addfld('EKVG',' ',' ',ekvg_sech(lon0:lon1,:),
+     |    'lon',lon0,lon1,'lat',lat0,lat1,0)
+        call addfld('EFXG',' ',' ',efxg_sech(lon0:lon1,:),
+     |    'lon',lon0,lon1,'lat',lat0,lat1,0)
       endif
 !      
       if (iprint > 0) then
         write(6,"('getamie: AMIE data interpolated to date and time')")
         write(6,"(72('-'),/)")
       endif
+
+! Sheng, 2017/07, Find auroral boundaries from AMIE energy flux
+! Similar to find auroral boundaries in import_mage
+      aurbound = 15.
+      do i=1,nlon
+        do j=nlat/2,1,-1
+          if (efxg(i,j) >= ab_efx) exit
+        enddo
+        if (j >= 1) aurbound(1,i) = max(rlatm(i+2,j),15.)
+        do j=nlat/2,nlat
+          if (efxg(i,j) >= ab_efx) exit
+        enddo
+        if (j <= nlat) aurbound(2,i) = max(rlatm(i+2,j),15.)
+      enddo
+
       end subroutine getamie    
 !-------------------------------------------------------------------
       subroutine boxcar_ave(x,y,lon,lat,mtime,itime,ibox)
@@ -1263,11 +1154,10 @@ C     ****
 !
       end subroutine boxcar_ave
 !-----------------------------------------------------------------------
-      subroutine mag2geo(am,ag,im,jm,dim,djm,lg,lm,nlong,nlatg,nlonm,
-     |  nlatm)
+      subroutine mag2geo(am,ag,im,jm,dim,djm,lg,lm,nlong,nlatg)
 !
 ! Args:
-      integer,intent(in) :: lg,lm,nlong,nlatg,nlonm,nlatm
+      integer,intent(in) :: lg,lm,nlong,nlatg
       integer,intent(in) :: im(lg,*),jm(lg,*)
       real,intent(in) :: am(lm,*),dim(lg,*),djm(lg,*)
       real,intent(out) :: ag(lg,*)

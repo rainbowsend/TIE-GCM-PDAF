@@ -17,15 +17,15 @@
 !              this enables us to initalize each model instance with its own
 !              start state
 ! 06 JUL 2023 removed unused variables
+! 18 SEP 2025: merged with TIE-GCM 3.0
 ! -----------------------------------------------------------------------------
 !
 ! Main program for tgcm models.
 !
 ! initial cvs import was tiegcm1
 !
-      use params_module,only: tgcm_version
       use input_module,only: input,dynamo,step,cwd,hpss_path,
-     |  potential_model,start_year
+     |  potential_model,start_year,start_day
       use dispose_module,only: init_dispose
       use init_module,only: init
       use hist_module,only: nstep
@@ -43,12 +43,11 @@
       use diags_module,only: init_diags
       use cons_module,only: consdyn,set_geogrid
       use mpitime_module,only: report_mpitime
-#ifdef MPI
       use mpi_module,only: mp_init,mp_close,mp_distribute_geo,
      |  mp_distribute_mag,mp_exchange_tasks,report_mpi_timing,
      |  mpi_timing,time_totalrun
       use my_esmf,only: esmf_init
-#endif
+
 #ifdef USE_PDAF
       use configuration,only: read_config, cfg_ensemble
       use mod_parallel_pdaf,only: n_modeltasks
@@ -57,9 +56,8 @@
       use netcdf_functionality, only: init_start_time
       use model_parameter_module, only: init_parameter_module
 #endif
-#if defined(INTERCOMM) || defined(CISMAH)
-      use cism_coupling_module,only: initialize,finalize
-#endif
+      use mage_coupling_module,only:
+     |  initialize_coupling,finalize_coupling
 #ifdef OMP
 !     use omp_module,only: init_omp
 #endif
@@ -85,22 +83,10 @@
 !
 ! Report starting time and other info to stdout:
       call startup_message
-
-#ifdef INTERCOMM
-!
-! This code block is required for coupling with LFM (CMIT):
-!
-! InterComm 2.0 requires that IC_Setprogname be called prior to
-! MPI_Init.
-      call IC_Setprogname("tiegcm")
-#endif
-
 !
 ! Initialize MPI:
-#ifdef MPI
       call mp_init
       if (mpi_timing) starttime = mpi_wtime()
-#endif
 
 #ifdef USE_PDAF
 ! number of model tasks/ensemble_size is required in init_parallel_pdaf
@@ -120,7 +106,6 @@
 ! Revise parallelization for ensemble assimilation
       call init_parallel_pdaf(0, 2)
 #endif
-
 !
 ! Initialize timing (must be called after mp_init):
       call init_timer
@@ -130,12 +115,12 @@
 !
       call timer(time0_run,time1_run,'RUN',0,0)    ! start run timing
       call timer(time0_init,time1_init,'INIT',0,0) ! start init timing
-      call getcwdir(cwd)
+      call getcwd(cwd)
       write(6,"('Current working directory (cwd) = ',a)") trim(cwd)
 !
 ! Namelist read and input verification:
 !
-      call input(mytid,ntask) ! get user input (mpi)
+      call input(ntask) ! get user input (mpi)
       if (mytid==0.and.len_trim(hpss_path) > 0) call init_dispose
 #ifdef USE_PDAF
 ! must be called after input (requires model time), but before apxparm
@@ -157,12 +142,10 @@
         call timer(time0_apx,time1_apx,'APXPARM',0,0)
         write(6,"('tgcm: dynamo=',i2,' -- calling apxparm: start_year=',
      |    i5)") dynamo,start_year
-        call apxparm(real(start_year))
+        call apxparm(start_year+start_day/366.)
         call timer(time0_apx,time1_apx,'APXPARM',1,0)
-        write(6,"('Time in apxparm = ',f6.3,' (secs)')") time1_apx
+        write(6,"('Time in apxparm = ',f7.3,' (secs)')") time1_apx
       endif
-!
-#ifdef MPI
 !
 ! Do 2d decomposition of geographic and magnetic grids:
       call mp_distribute_geo
@@ -173,15 +156,6 @@
 !
 ! Set up geo and mag ESMF grids (esmf.F):
       call esmf_init
-#endif
-
-#if defined(INTERCOMM) || defined(CISMAH)
-!
-! Initialize code coupling communication framework 
-! (i.e. InterComm or AdHoc file exchanges)
-!
-      call initialize
-#endif
 !
 ! Do initialization:
       call init
@@ -207,6 +181,11 @@
 ! Set several lower boundary parameters (including Hough mode functions):
       call init_lbc ! lbc module
 
+!
+! Initialize code coupling communication framework (MPI)
+!
+      call initialize_coupling
+!
       call timer(time0_init,time1_init,'INIT',1,0) ! end init timing
 
 #ifdef USE_PDAF
@@ -229,9 +208,7 @@
 !
 ! Report to stdout:
       write(6,"(' ')")
-#ifdef MPI
       write(6,"('MPI run with ntask = ',i3)") ntask
-#endif
       write(6,"('nstep=',i8,' step=',i8)") nstep,step
       hours = real(nstep*step)/3600. ! seconds to hours
       days  = hours/24.
@@ -245,24 +222,20 @@
       write(6,"('Cpu time for run = ',f10.2)") cpu2-cpu1
 #endif
       call timer(time0_run,time1_run,'RUN',1,0) ! end total run timing
-
-#if defined(INTERCOMM) || defined(CISMAH)
 !
-! Finalize code coupling communication framework 
-! (i.e. InterComm or AdHoc file exchanges)
+! Finalize code coupling communication framework (MPI)
 !
-      call finalize
-#endif
+      call finalize_coupling
 !
 ! Report detailed mpi timing (see mpi.F):
 !
-#ifdef MPI
+! Report detailed mpi timing (see mpi.F):
       if (mpi_timing) then
         endtime = mpi_wtime()
         time_totalrun = time_totalrun+(endtime-starttime)
         call report_mpi_timing
       endif
-#endif
+
 !
 ! Finalize PDAF:
 !
@@ -272,11 +245,10 @@
 !
 ! Finalize mpi:
 !
-#ifdef MPI
 ! report_mpitime reports on dynamo timing using mpi_wtime function.
       call report_mpitime
       call mp_close ! mpi.F
-#endif
+!
       call timer_report
 !
       call final_message

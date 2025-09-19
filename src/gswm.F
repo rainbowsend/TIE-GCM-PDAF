@@ -1,19 +1,10 @@
-!
+!      
       module gswm_module
 !
 ! This software is part of the NCAR TIE-GCM.  Use is governed by the 
 ! Open Source Academic Research License Agreement contained in the file 
 ! tiegcmlicense.txt.
-!
-! -----------------------------------------------------------------------------
-! This file was modified for the integration of the Parallel Data Assimilation
-! Framework (PDAF)
-! Armin Corbin, University of Bonn, Institute for Geodesy and Geoinformation
-!
-! 07 JUL 2023: allocate 't','u','v','z' and 'tmp' array
-!              to fix  'moved from stack to static storage'
-! -----------------------------------------------------------------------------
-!
+!      
 ! Read GSWM boundary perturbations Z, T, U, V, and interpolate
 !   to model grid and time.
 !
@@ -25,15 +16,11 @@
 !
       use params_module,only: nlon,nlat,nlonp4,nlonp2
       use mpi_module,only: lon0,lon1,lat0,lat1
-      use nchist_module,only:nc_open,nc_close,handle_ncerr
+      use nchist_module,only:handle_ncerr
       use addfld_module,only: addfld
       implicit none
 !
-#ifdef SUN
-#include <netcdf3.inc>
-#else
 #include <netcdf.inc>
-#endif 
 ! 
 ! GSWM boundary data at model grid, output by this module,
 !   to be used by dt, duv, addiag, etc.
@@ -56,7 +43,7 @@
 !
       contains 
 !-----------------------------------------------------------------------
-      subroutine getgswm(istep,iyear,iday,secs) 
+      subroutine getgswm(istep,iday,secs) 
 !
 ! Module driver to read nc files, and do time interpolations.
 !
@@ -71,64 +58,35 @@
      |  igswm_mi_sdi , ! 0/1 flag to get GSWM data semidiurnal tide
      |  igswm_nm_di  , ! 0/1 flag to get GSWM data nonmigrating diurnal tide
      |  igswm_nm_sdi   ! 0/1 flag to get GSWM data nonmigrating semidiurnal tide
-#ifdef USE_PDAF
-      use model_parameter_handling_module, only: param_gswm_delay
-#endif
 !
 ! Driver for obtaining GSWM data, called once per timestep from advance.
 !
 ! Args:
-      integer,intent(in) :: istep,iyear,iday
+      integer,intent(in) :: istep,iday
       real,intent(in) :: secs
-!
-! Local:
-      integer :: iprint
-!
-
-      real :: phase_secs
-      integer :: phase_day
-
-      iprint = 0
-      if (istep==1) iprint = 1
-#ifdef USE_PDAF
-      ! perturbe phase of tide
-      ! secs is in [0,86400)
-      phase_secs = secs
-      call param_gswm_delay%handle(phase_secs)
-      phase_day = iday + floor(phase_secs/86400.)
-      phase_secs = mod(int(phase_secs),86400)
-c       write(*,*) 'actual model time is ', iday, ' days ', secs, ' secs.'
-c       write(*,*) 'phase offset model time is ', phase_day, ' days ',
-c      |            phase_secs, ' secs.'
-      ! iyear is not used in mkgswm, ignore it
-      ! mkgswm uses modeltime, needs to be perturbed
-#else
-      phase_secs = secs
-      phase_day = iday
-#endif
 !
 ! Get gswm migrating diurnal tide data:
       if (igswm_mi_di > 0) then
         if (istep==1) call rdgswm(gswm_mi_di_ncfile,'mi_di')
-        call mkgswm(iyear,phase_day,int(phase_secs),iprint,'mi_di')
+        call mkgswm(iday,int(secs),'mi_di')
       endif
 !
 ! Get gswm migrating semi-diurnal tide data:
       if (igswm_mi_sdi > 0) then
         if (istep==1) call rdgswm(gswm_mi_sdi_ncfile,'mi_sdi')
-        call mkgswm(iyear,phase_day,int(phase_secs),iprint,'mi_sdi')
+        call mkgswm(iday,int(secs),'mi_sdi')
       endif
 !
 ! Get gswm non-migrating diurnal tide data:
       if (igswm_nm_di > 0) then
         if (istep==1) call rdgswm(gswm_nm_di_ncfile,'nm_di')
-        call mkgswm(iyear,phase_day,int(phase_secs),iprint,'nm_di')
+        call mkgswm(iday,int(secs),'nm_di')
       endif
 !
 ! Get gswm non-migrating semi-diurnal tide data:
       if (igswm_nm_sdi > 0) then
         if (istep==1) call rdgswm(gswm_nm_sdi_ncfile,'nm_sdi')
-        call mkgswm(iyear,phase_day,int(phase_secs),iprint,'nm_sdi')
+        call mkgswm(iday,int(secs),'nm_sdi')
       endif
       end subroutine getgswm
 !-----------------------------------------------------------------------
@@ -140,20 +98,14 @@ c      |            phase_secs, ' secs.'
       character(len=*),intent(in) :: ncfile,type
 !
 ! Local:
-      integer :: ncid,istat
+      integer :: ncid,istat,lonbeg,lonend
       character(len=mxlen_filename) :: dskfile
       integer :: nlon_rd, nlat_rd, nmonth_rd, nhour_rd
       integer :: id_nmonth, id_nhour, id_nlon, id_nlat
       integer :: idv_z, idv_t, idv_u, idv_v
       character(len=240) :: char240
-      real,dimension(:,:,:,:), allocatable :: t,u,v,z
-      real,dimension(:,:,:,:), allocatable :: tmp
-!
-      allocate(t(nlonp4,nlat,nmonth,nhour))
-      allocate(u(nlonp4,nlat,nmonth,nhour))
-      allocate(v(nlonp4,nlat,nmonth,nhour))
-      allocate(z(nlonp4,nlat,nmonth,nhour))
-      allocate(tmp(nlon,nlat,nmonth,nhour))
+      integer,dimension(4) :: start,count
+      real,dimension(lon0:lon1,lat0:lat1,nmonth,nhour) :: t,u,v,z
 !
       dskfile = ' '
       call getfile(ncfile,dskfile)
@@ -161,8 +113,8 @@ c      |            phase_secs, ' secs.'
       write(6,"('Reading GSWM data file ',a)") trim(ncfile)
 !
 ! Open netcdf file:
-      call nc_open(ncid,dskfile,'OLD','READ')
-      if (ncid==0) then
+      istat = nf_open(dskfile,NF_NOWRITE,ncid)
+      if (istat /= NF_NOWRITE) then
         write(6,"(/,'>>> rdgswm: error opening netcdf gswm ',
      |    'file ',a,' dskfile ',a)") trim(ncfile),trim(dskfile)
         call shutdown('rdgswm')
@@ -228,14 +180,21 @@ c      |            phase_secs, ' secs.'
         call shutdown('rdgswm')
       endif
 !
+      lonbeg = lon0
+      if (lon0 == 1) lonbeg = 3
+      lonend = lon1
+      if (lon1 == nlonp4) lonend = nlonp2
+      start = (/lonbeg-2,lat0,1,1/)
+      count = (/lonend-lonbeg+1,lat1-lat0+1,nmonth,nhour/)
+!
 ! Get Z geopotential height perturbation [m]:
 !
       istat = nf_inq_varid(ncid,'Z',idv_z)
       if (istat /= NF_NOERR) call handle_ncerr(istat,
      |  'rdgswm: Error getting Z var id')
       z = 0. ! init
-      istat = nf_get_var_double(ncid,idv_z,tmp)
-      z(3:nlon+2,:,:,:) = tmp(:,:,:,:)
+      istat = nf_get_vara_double(ncid,idv_z,start,count,
+     |  z(lonbeg:lonend,:,:,:))
       if (istat /= NF_NOERR) call handle_ncerr(istat,
      |  'rdgswm: Error getting variable Z')
       z = z*100. 	! convert from m to cm
@@ -248,8 +207,8 @@ c      |            phase_secs, ' secs.'
       if (istat /= NF_NOERR) call handle_ncerr(istat,
      |  'rdgswm: Error getting TN var id')
       t = 0.
-      istat = nf_get_var_double(ncid,idv_t,tmp)
-      t(3:nlon+2,:,:,:) = tmp(:,:,:,:)
+      istat = nf_get_vara_double(ncid,idv_t,start,count,
+     |  t(lonbeg:lonend,:,:,:))
       if (istat /= NF_NOERR) call handle_ncerr(istat,
      |  'rdgswm: Error getting variable TN')
 !     write(6,"('rdgswm ',a,': tn min,max=',2e12.4)") 
@@ -261,8 +220,8 @@ c      |            phase_secs, ' secs.'
       if (istat /= NF_NOERR) call handle_ncerr(istat,
      |  'rdgswm: Error getting UN var id')
       u = 0.
-      istat = nf_get_var_double(ncid,idv_u,tmp)
-      u(3:nlon+2,:,:,:) = tmp(:,:,:,:)
+      istat = nf_get_vara_double(ncid,idv_u,start,count,
+     |  u(lonbeg:lonend,:,:,:))
       if (istat /= NF_NOERR) call handle_ncerr(istat,
      |  'rdgswm: Error getting variable UN')
       u = u*100. 	! convert to cm/s
@@ -275,8 +234,8 @@ c      |            phase_secs, ' secs.'
       if (istat /= NF_NOERR) call handle_ncerr(istat,
      |  'rdgswm: Error getting VN var id')
       v = 0.
-      istat = nf_get_var_double(ncid,idv_v,tmp)
-      v(3:nlon+2,:,:,:) = tmp(:,:,:,:)
+      istat = nf_get_vara_double(ncid,idv_v,start,count,
+     |  v(lonbeg:lonend,:,:,:))
       if (istat /= NF_NOERR) call handle_ncerr(istat,
      |  'rdgswm: Error getting variable VN')
       v = v*100. 	! convert to cm/s
@@ -311,19 +270,12 @@ c      |            phase_secs, ' secs.'
       end select
 !
 ! Close the file:
-      call nc_close(ncid)
+      istat = nf_close(ncid)
       write(6,"('Completed read from GSWM data file ',a)") trim(ncfile)
       write(6,"(/,72('-'))")
-
-      deallocate(t)
-      deallocate(u)
-      deallocate(v)
-      deallocate(z)
-      deallocate(tmp)
-
       end subroutine rdgswm
 !-----------------------------------------------------------------------
-      subroutine mkgswm(iyear,iday,isecs,iprint,type)
+      subroutine mkgswm(iday,isecs,type)
 !
 ! Use data read from gswm file to return perturbation in Z
 ! and T at current model date and time. It is assumed that the gswm file
@@ -334,56 +286,32 @@ c      |            phase_secs, ' secs.'
 ! interpolated to the modelday
 !
       use hist_module,only: modeltime
-#ifdef MPI
       use mpi_module,only: mp_periodic_f2d
-#endif
-#ifdef USE_PDAF
-      use model_parameter_handling_module, only: param_gswm_delay
-#endif
       implicit none
 !
 ! Args:
-      integer,intent(in) :: iyear,iday,isecs,iprint
+      integer,intent(in) :: iday,isecs
       character(len=*),intent(in) :: type
 !
 ! Local:
-      real :: difsec,difday,sec,secint,dayint
-      integer :: i,j,ndmon_nl(13),ndmon_lp(13),nonleap,
-     |   mon_cur,mon_nxt,ihr_cur,ihr_nxt,nointp=0,
-     |   lonbeg,lonend,i0,i1,j0,j1
+      real :: difsec,difday,secint,dayint
+      integer :: i,ndmon_nl(13),mon_cur,mon_nxt,ihr_cur,ihr_nxt,
+     |   nointp=0,i0,i1,j0,j1
       real,dimension(lon0:lon1,lat0:lat1) :: t,u,v,z,
      |  z_curmo, t_curmo, u_curmo, v_curmo,
      |  z_nxtmo, t_nxtmo, u_nxtmo, v_nxtmo,
      |  z_curmo_nxthr, t_curmo_nxthr, u_curmo_nxthr, v_curmo_nxthr,
      |  z_nxtmo_nxthr, t_nxtmo_nxthr, u_nxtmo_nxthr, v_nxtmo_nxthr
       real :: fgswm(lon0:lon1,lat0:lat1,4) ! for mp calls
-
-      integer :: phase_modeltime(4)
-      integer(kind=8) :: nsecs
-      real :: nsecs_r
-!
-! Data: GSWM data given at the middle of each month
+!   
+! Data: GSWM data given at the middle of each month 
 !       -> day of year for this data assuming non-leap year
 !         J  F  M  A   M   J   J   A   S   O   N   D   J
       data ndmon_nl                                ! non_leap
-     |  /15,46,74,105,135,166,196,227,258,288,319,349,380/
-!
+     |  /15,46,74,105,135,166,196,227,258,288,319,349,380/ 
+! 
 ! External:
       real,external :: finterp
-
-#ifdef USE_PDAF
-      ! perturbe phase of tide
-      ! secs is in [0,86400)
-
-      call modeltime_to_nsecs(modeltime,nsecs)
-      nsecs_r = real(nsecs)
-      call param_gswm_delay%handle(nsecs_r)
-      call nsecs_to_modeltime(int(nsecs_r,kind=8),phase_modeltime)
-c       write(*,*) 'actual model time is ', modeltime
-c       write(*,*) 'phase offset model time is ', phase_modeltime
-#else
-      phase_modeltime = modeltime
-#endif
 !
 ! For addfld calls:
       i0 = lon0 ; i1 = lon1
@@ -399,8 +327,8 @@ c       write(*,*) 'phase offset model time is ', phase_modeltime
       if(mon_cur == 0 ) mon_cur = 12
 ! 
 ! Get hour of model run (model hours from 0 to 23 )
-      ihr_cur = phase_modeltime(2)	! current hour
-      ihr_nxt = phase_modeltime(2)+1  ! next hour
+      ihr_cur = modeltime(2)	! current hour
+      ihr_nxt = modeltime(2)+1  ! next hour
       if(ihr_nxt == 24 ) ihr_nxt = 0
 !
 ! Subdomains at current month, current hour:
@@ -418,8 +346,7 @@ c       write(*,*) 'phase offset model time is ', phase_modeltime
 ! Interpolate to month:
       if (isecs /= 0) then
         difsec = 60.*60. ! difference in sec between ihr_cur and ihr_nxt
-        secint = float(phase_modeltime(3)*60 + phase_modeltime(4))  ! interpolation time [sec]
-!
+        secint = float(modeltime(3)*60 + modeltime(4))  ! interpolation time [sec]
 !
 ! Current month, next hour:
         z = z_curmo ; t = t_curmo ; u = u_curmo ; v = v_curmo
@@ -428,10 +355,10 @@ c       write(*,*) 'phase offset model time is ', phase_modeltime
         u_curmo_nxthr = gswmdat(type,mon_cur,ihr_nxt+1,'u')
         v_curmo_nxthr = gswmdat(type,mon_cur,ihr_nxt+1,'v')
 
-        call timeinterp(z, z_curmo_nxthr, difsec, secint, z_curmo, 1)
-        call timeinterp(t, t_curmo_nxthr, difsec, secint, t_curmo, 1)
-        call timeinterp(u, u_curmo_nxthr, difsec, secint, u_curmo, 1)
-        call timeinterp(v, v_curmo_nxthr, difsec, secint, v_curmo, 1)
+        call timeinterp(z, z_curmo_nxthr, difsec, secint, z_curmo)
+        call timeinterp(t, t_curmo_nxthr, difsec, secint, t_curmo)
+        call timeinterp(u, u_curmo_nxthr, difsec, secint, u_curmo)
+        call timeinterp(v, v_curmo_nxthr, difsec, secint, v_curmo)
 !
 ! Interpolate to next month:
         z = z_nxtmo ; t = t_nxtmo ; u = u_nxtmo ; v = v_nxtmo
@@ -442,10 +369,10 @@ c       write(*,*) 'phase offset model time is ', phase_modeltime
         u_nxtmo_nxthr = gswmdat(type,mon_nxt,ihr_nxt+1,'u')
         v_nxtmo_nxthr = gswmdat(type,mon_nxt,ihr_nxt+1,'v')
 
-        call timeinterp(z, z_nxtmo_nxthr, difsec, secint, z_nxtmo,1)
-        call timeinterp(t, t_nxtmo_nxthr, difsec, secint, t_nxtmo,1)
-        call timeinterp(u, u_nxtmo_nxthr, difsec, secint, u_nxtmo,1)
-        call timeinterp(v, v_nxtmo_nxthr, difsec, secint, v_nxtmo,1)
+        call timeinterp(z, z_nxtmo_nxthr, difsec, secint, z_nxtmo)
+        call timeinterp(t, t_nxtmo_nxthr, difsec, secint, t_nxtmo)
+        call timeinterp(u, u_nxtmo_nxthr, difsec, secint, u_nxtmo)
+        call timeinterp(v, v_nxtmo_nxthr, difsec, secint, v_nxtmo)
 
       endif ! interpolate to month or not
 !
@@ -477,10 +404,10 @@ c       write(*,*) 'phase offset model time is ', phase_modeltime
 ! Interpolate to ut if necessary to local z,t,u,v:
       select case (nointp)
         case (0)                  ! interpolate
-          call timeinterp(z_curmo,z_nxtmo,difday,dayint,z,1)
-          call timeinterp(t_curmo,t_nxtmo,difday,dayint,t,1)
-          call timeinterp(u_curmo,u_nxtmo,difday,dayint,u,1)
-          call timeinterp(v_curmo,v_nxtmo,difday,dayint,v,1)
+          call timeinterp(z_curmo,z_nxtmo,difday,dayint,z)
+          call timeinterp(t_curmo,t_nxtmo,difday,dayint,t)
+          call timeinterp(u_curmo,u_nxtmo,difday,dayint,u)
+          call timeinterp(v_curmo,v_nxtmo,difday,dayint,v)
         case (1)                  ! no interp (same day as current month)
           z = z_curmo
           t = t_curmo
@@ -526,7 +453,6 @@ c       write(*,*) 'phase offset model time is ', phase_modeltime
 ! Do mpi periodic points exchange for gswm with f2d(:)
 ! lons 1,2 <- nlonp4-3,nlonp4-2 and nlonp4-1,nlonp4 <- 3,4
 !
-#ifdef MPI
       select case (type)
         case ('mi_di')
            fgswm(:,:,1) = gswm_mi_di_z(lon0:lon1,lat0:lat1)
@@ -570,31 +496,7 @@ c       write(*,*) 'phase offset model time is ', phase_modeltime
            gswm_nm_sdi_v(lon0:lon1,lat0:lat1) = fgswm(:,:,4)
         case default
       end select
-#else
-      select case (type)
-        case ('mi_di') 
-          call set_periodic_f2d(gswm_mi_di_z)
-          call set_periodic_f2d(gswm_mi_di_t)
-          call set_periodic_f2d(gswm_mi_di_u)
-          call set_periodic_f2d(gswm_mi_di_v)
-        case ('mi_sdi') 
-          call set_periodic_f2d(gswm_mi_sdi_z)
-          call set_periodic_f2d(gswm_mi_sdi_t)
-          call set_periodic_f2d(gswm_mi_sdi_u)
-          call set_periodic_f2d(gswm_mi_sdi_v)
-        case ('nm_di') 
-          call set_periodic_f2d(gswm_nm_di_z)
-          call set_periodic_f2d(gswm_nm_di_t)
-          call set_periodic_f2d(gswm_nm_di_u)
-          call set_periodic_f2d(gswm_nm_di_v)
-        case ('nm_sdi') 
-          call set_periodic_f2d(gswm_nm_sdi_z)
-          call set_periodic_f2d(gswm_nm_sdi_t)
-          call set_periodic_f2d(gswm_nm_sdi_u)
-          call set_periodic_f2d(gswm_nm_sdi_v)
-        case default
-      end select
-#endif
+
       select case (type)
         case ('mi_di') 
 
@@ -693,8 +595,7 @@ c       write(*,*) 'phase offset model time is ', phase_modeltime
       end select
       end function gswmdat
 !-----------------------------------------------------------------------
-      subroutine timeinterp(d1,d2,difd1d2,difint,fout,
-     |  iprnt)
+      subroutine timeinterp(d1,d2,difd1d2,difint,fout)
 !
 ! Interpolate from fields d1,d2  linearly to time difint
 !   (d1 must be at 0 unit time), returning fout
@@ -706,7 +607,6 @@ c       write(*,*) 'phase offset model time is ', phase_modeltime
 !   fout is defined at difint
 !
 ! Args:
-      integer,intent(in) :: iprnt
       real,intent(in)  :: difd1d2,difint,d1(lon0:lon1,lat0:lat1),
      |   d2(lon0:lon1,lat0:lat1)
       real,intent(out) :: fout(lon0:lon1,lat0:lat1)
