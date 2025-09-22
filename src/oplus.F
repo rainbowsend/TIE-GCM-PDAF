@@ -360,6 +360,12 @@
             he_cm3(k,i,lat) = xnmbar(k,i,lat)*he(k,i,lat)*rmassinv_he
             n2_cm3(k,i,lat) = xnmbar(k,i,lat)*n2(k,i,lat)*rmassinv_n2
             n2d_cm3(k,i,lat) = xnmbar(k,i,lat)*n2d(k,i,lat)*rmassinv_n2d
+
+#ifdef NOTRAP
+            ! tr cannot be zero as it will fail in sqrt and log call
+            ! This is only an issue at model initalization
+            if(tr(k,i,lat)==0) tr(k,i,lat) = 100
+#endif
 !
 ! 8/28/13 btf: Use n2=1-o2-o-he, and include O+/He collision rate from Wenbin:
             vni(k,i,lat) = 1e-10*
@@ -370,6 +376,11 @@
      |         (1.-0.064*log10(tr(k,i,lat)))**2*colfac)
 !
 ! ambipolar diffusion coefficient
+#ifdef NOTRAP
+            ! tr cannot be zero as it will fail in sqrt and log call
+            ! This is only an issue at model initalization
+            if(vni(k,i,lat)==0) vni(k,i,lat) = 1
+#endif
             dj(k,i,lat) = boltz/(mp*rmass_op*vni(k,i,lat))
           enddo ! k=lev0,lev1
         enddo ! i=lon0-2,lon1+2
@@ -802,8 +813,16 @@
           dtpopdz(lev0,i,lat) = (tpop(lev0+1,i,lat)-tpop(lev0,i,lat))/dz
 !
           do k=lev0,lev1
+#ifdef NOTRAP
+            if (scht(k,i,lat)==0) then
+              diffj(k,i,lat) = 0
+            else
+#endif
             diffj(k,i,lat) = 2.*dtpopdz(k,i,lat)/scht(k,i,lat)+
      |        mgr*op(k,i,lat)
+#ifdef NOTRAP
+            end if
+#endif
           enddo ! k=lev0,lev1
         enddo ! i=lon0-2,lon1+2
       enddo ! lat=lat0-2,lat1+2

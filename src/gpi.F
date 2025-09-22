@@ -17,6 +17,8 @@
 !   13 JAN 2021: enabled perturbation of ctpoten and hemispheric power
 !   07 JUL 2023: commented routines that are not called by model
 !   18 SEP 2025: merged with TIE-GCM 3.0
+!   22 SEP 2025: check for negative values doe snot fail when compiling with
+!                -ffpe-trap=invalid,zero,overflow
 ! -----------------------------------------------------------------------------
 !
 ! Module to use NGDC data for geophysical indices f107, f107a, 
@@ -92,6 +94,9 @@
       character(len=mxlen_filename) :: dskfile
       integer :: istat,ncid,nkp,i
       integer :: id_ndays,id_nkp,idv_iyd,idv_f107d,idv_f107a,idv_kp
+
+      logical, dimension(:,:), allocatable :: nan_mask, negative_mask
+      logical, dimension(:), allocatable :: day_mask
 !
 ! Acquire mss file:
       dskfile = ' '
@@ -155,8 +160,10 @@
 !     write(6,"('rdgpi: f107a=',/(8f8.2))") (gpi_f107a(i),i=1,ngpidays)
 !
 ! Get kp:
-      
       allocate(gpi_kp(ngpikp,ngpidays))
+      allocate(nan_mask(ngpikp,ngpidays))
+      allocate(negative_mask(ngpikp,ngpidays))
+      allocate(day_mask(ngpidays))
 
       istat = nf_inq_varid(ncid,gpi_ncfile_kp_var,idv_kp)
       if (istat /= NF_NOERR) call handle_ncerr(istat,
@@ -167,18 +174,26 @@
 !     write(6,"('rdgpi: kp=',/(8f8.2))") (gpi_kp(:,i),i=1,ngpidays)
 
 !      write(6,"('size gpi_kp ',2i8)") size(gpi_kp,1), size(gpi_kp,2)
-      
-      
-      if (any(gpi_kp < 0.)) then
-        do i=1,ngpidays
-          if (any(gpi_kp(:,i) < 0.)) then
-            write(6,"('>>> WARNING rdgpi: bad kp at i=',i5,
-     |        ' gpi_iyd(i)=',i6,' gpi_kp(:,i)=',/,8e12.4)")
-     |        i,gpi_iyd(i),gpi_kp(:,i)
-          endif
-        enddo
-      endif
-      
+
+      nan_mask = isnan(gpi_kp)
+      if (count(nan_mask)>0) then
+            day_mask = count(nan_mask,dim=2)>0
+            write(*,*) ">>> WARNING rdgpi: kp contains NaN values"
+            write(*,*) "in the following days: ", pack(gpi_iyd,day_mask)
+      end if
+
+      negative_mask = .false.
+      where(nan_mask.eqv..false.) negative_mask = gpi_kp<0.0
+      if (count(negative_mask)>0) then
+            day_mask = count(negative_mask,dim=2)>0
+            write(*,*) ">>> WARNING rdgpi: kp contains neagtive values"
+            write(*,*) "in the following days: ", pack(gpi_iyd,day_mask)
+      end if
+
+      deallocate(nan_mask)
+      deallocate(negative_mask)
+      deallocate(day_mask)
+
 !
 ! Get beginning and ending integer dates:
 ! (these should be gpi_iyd(3) and gpi_iyd(ngpidays-2) respectively,

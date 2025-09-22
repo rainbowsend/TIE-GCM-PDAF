@@ -5,6 +5,13 @@
 ! Open Source Academic Research License Agreement contained in the file 
 ! tiegcmlicense.txt.
 !
+! -----------------------------------------------------------------------------
+! This file was modified for the integration of the Parallel Data Assimilation
+! Framework (PDAF)
+! Armin Corbin, University of Bonn, Institute for Geodesy and Geoinformation
+
+!   22 SEP 2025: check for zero division
+! -----------------------------------------------------------------------------
       use params_module,only: nlevp1,nlonp4,nlat
       use addfld_module,only: addfld
       use mpi_module,only: mpi_timing
@@ -43,6 +50,7 @@
       integer :: k,i,lat,nlevs,ier
       real :: abcsj,abcsjp,con1,con2,con3,delt,dels
       real :: cp2 = 0.2
+      real :: denominator
 !
 #ifdef VT
 !     code = 119 ; state = 'hdif1' ; activity='ModelCode'
@@ -90,8 +98,17 @@
       do lat=lat0-2,lat1+2
         do i=lon0-2,lon1+2
           do k=lev0,lev1-1
-            fnrh(k,i,lat) = mbar(k,i,lat) /
-     |                      (tn_nm(k,i,lat)+((t0(k)+t0(k+1))*.5))
+            denominator = tn_nm(k,i,lat)+((t0(k)+t0(k+1))*.5)
+#ifdef NOTRAP
+            if(denominator == 0) then
+                  ! assume temperature is never smaller than 100 K
+                  fnrh(k,i,lat) = mbar(k,i,lat) / 100
+            else
+#endif
+            fnrh(k,i,lat) = mbar(k,i,lat) / denominator
+#ifdef NOTRAP
+            end if
+#endif
           enddo
         enddo
       enddo

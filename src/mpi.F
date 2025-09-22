@@ -210,6 +210,8 @@
         call shutdown('mpi_comm_rank error')
       endif
 
+! TODO PDAF Integration is sofar incompatibe with GAMERA/REMIX. would require modification of mpi init in PDAF
+
 ! MPI_COMM_WORLD includes processes for other components (GAMERA/REMIX)
 ! Divide it into several sub communicators for each component
       call mpi_comm_split(MPI_COMM_WORLD,
@@ -222,12 +224,15 @@
 ! If not coupled to MAGE, TIEGCM_WORLD is essentially MPI_COMM_WORLD
 ! But with a different name (tag)
 
+
       call mpi_comm_size(TIEGCM_WORLD,ntask,ier)
       if (ier /= 0) then
         write(6,"('>>> Error from mpi_comm_split: ier=',i4)") ier
         call shutdown('mpi_comm_split error')
       endif
 
+#ifndef USE_PDAF
+! in case of PDAF correct number is checked in init_parallel_pdaf
       is_prime = .true.
       do i = 2,int(sqrt(dble(ntask)))
         if (mod(ntask,i) == 0) then
@@ -241,6 +246,7 @@
      |    'processor count')") ntask
         call shutdown('invalid ntask')
       endif
+#endif
 
       call mpi_comm_rank(TIEGCM_WORLD,mytid,ier)
       if (ier /= 0) then
