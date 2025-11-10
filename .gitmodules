@@ -6,3 +6,11 @@
 	path = deps/esmf
 	url = https://github.com/esmf-org/esmf.git
 	branch = release/8.7.0
+[submodule "deps/pdaf-binding-tiegcm"]
+	path = deps/pdaf-binding-tiegcm
+	url = git@gitlab.igg.uni-bonn.de:apmg/pdaf-binding-tiegcm.git
+	branch = master
+[submodule "deps/geodetic-fortran-utilities"]
+	path = deps/geodetic-fortran-utilities
+	url = git@gitlab.igg.uni-bonn.de:s7arcorb/bspline.git
+	branch = main

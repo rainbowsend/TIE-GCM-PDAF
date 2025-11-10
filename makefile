@@ -22,7 +22,7 @@ sgr0 := $(shell tput sgr0)
 
 # default value for WITH_PDAF, may be overwritten by MAKE_MACHINE
 ifeq ($(WITH_PDAF),)
-	WITH_PDAF=FALSE
+	WITH_PDAF=TRUE
 endif
 
 # default value for EXE_NAME, may be overwritten by MAKE_MACHINE
@@ -59,8 +59,8 @@ FFLAGS += $(OPTIM)
 
 WARNINGS= -Waliasing -Wampersand -Wconversion -Wsurprising -Wintrinsic-shadow -Winteger-division -Wreal-q-constant -Wmaybe-uninitialized
 
-BIND_SRC_DIR := src/binding
-TGCM_SRC_DIR := src/
+BIND_SRC_DIR := deps/pdaf-binding-tiegcm/src
+TGCM_SRC_DIR := src
 
 INCLUDE:= $(INC_NETCDF) \
           $(INC_MPI) \
@@ -74,10 +74,10 @@ LIB= $(LIB_NETCDF) \
 
 ifeq ($(WITH_PDAF),TRUE)
        LIB += $(LIB_PDAF)
-       LIB += -L deps/bspline/lib -lbspline
+       LIB += -L deps/geodetic-fortran-utilities/lib -lgfu
        INCLUDE += $(INC_PDAF)
        INCLUDE += -I$(BIND_SRC_DIR)
-       INCLUDE += -I deps/bspline/include
+       INCLUDE += -I deps/geodetic-fortran-utilities/include
        FFLAGS += -DUSE_PDAF
 endif
 
