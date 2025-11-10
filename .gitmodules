@@ -1,0 +1,8 @@
+[submodule "deps/pdaf"]
+	path = deps/pdaf
+	url = https://github.com/PDAF/PDAF.git
+	branch = PDAF_V2.3
+[submodule "deps/esmf"]
+	path = deps/esmf
+	url = https://github.com/esmf-org/esmf.git
+	branch = release/8.7.0
