@@ -68,140 +68,722 @@ In addition to the history files TIE-GCM-PDAF has its own writer, whcih is contr
 ### OUTPUT%RESULT_FILE_NAME_TAG
   Name of the NetCDF file(s). ".nc" is added autmatically.
 
-  Type: string
+  **Type**: string
 
-  Default: `"results"`
+  **Default**: `"results"`
 
-  Example: `OUTPUT%RESULT_FILE_NAME_TAG="test"`
+  **Example**: `OUTPUT%RESULT_FILE_NAME_TAG="test"`
 
 ### OUTPUT%SAVED_FIELDS
   List of quantities that are included in result file. Maximum supported number of quantities is 20.
 
-  Type: string array
+  **Type**: string array
 
-  Default: empty
+  **Default**: empty
 
-  Example: `OUTPUT%RESULT_FILE_NAME_TAG='DEN', 'O1', 'O2', 'HE', 'TN', 'NE',`
+  **Example**: `OUTPUT%RESULT_FILE_NAME_TAG='DEN', 'O1', 'O2', 'HE', 'TN', 'NE',`
 
 ### OUTPUT%SAVE_STATE
   If true, in addition to the quantities specified in OUTPUT%SAVED_FIELDS, all quantities of the state vector at time step i are also written.
 
-  Type: logical
+  **Type**: logical
 
-  Default: `.false.`
+  **Default**: `.false.`
 
-  Example: `OUTPUT%SAVE_STATE=.true.`
+  **Example**: `OUTPUT%SAVE_STATE=.true.`
 
 ### OUTPUT%SAVE_STATE_NM
   If true, in addition to the quantities specified in OUTPUT%SAVED_FIELDS, all quantities of the state vector at time step i-1 are also written.
 
-  Type: logical
+  **Type**: logical
 
-  Default: `.false.`
+  **Default**: `.false.`
 
-  Example: `OUTPUT%SAVE_STATE_NM=.true.`
+  **Example**: `OUTPUT%SAVE_STATE_NM=.true.`
 
 ### OUTPUT%SAVE_OBS
   If true, in addition to the quantities specified in OUTPUT%SAVED_FIELDS, all observed quantities also written.
 
-  Type: logical
+  **Type**: logical
 
-  Default: `.true.`
+  **Default**: `.true.`
 
-  Example: `OUTPUT%SAVE_OBS=.true.`
+  **Example**: `OUTPUT%SAVE_OBS=.true.`
 
 ### OUTPUT%SAVE_MEMBERS
   Write all ensemle members to the file. This may result in very large files.
 
-  Type: logical
+  **Type**: logical
 
-  Default: `.false.`
+  **Default**: `.false.`
 
-  Example: `OUTPUT%SAVE_MEMBERS=.true.`
+  **Example**: `OUTPUT%SAVE_MEMBERS=.true.`
 
-### OUTPUT%SAVE_UNCONSTRAINED_ANALYSIS
+### OUTPUT%SAVE_UNCONSTRAINED_ANALYSIS [expert]
   Write the results of the analysis step before the constraints are applied. The constrained quantites are written regardless of this option.
 
-  Type: logical
+  **Type**: logical
 
-  Default: `.false.`
+  **Default**: `.false.`
 
-  Example: `OUTPUT%SAVE_UNCONSTRAINED_ANALYSIS=.true.`
+  **Example**: `OUTPUT%SAVE_UNCONSTRAINED_ANALYSIS=.true.`
 
 ### OUTPUT%SYNC_EVERY
   Syncing the nc files is a costly operation. This parameter controlls after how many time steps with a writing operation the file is sync. If the model crashes befor data was syncronized it is lost.
 
-  Type: integer
+  **Type**: integer
 
-  Default: 10
+  **Default**: 10
 
-  Example: `OUTPUT%SYNC_EVERY=100`
+  **Example**: `OUTPUT%SYNC_EVERY=100`
 
-### OUTPUT%OUTPUT_STRATEGY
+### OUTPUT%OUTPUT_STRATEGY [expert]
   1: single writer - single file (recommended)
+
   2: multiple writeres - multiples files
 
-  Type: integer
+  **Type**: integer
 
-  Default: 1
+  **Default**: 1
 
-  Example: `OUTPUT%OUTPUT_STRATEGY=1`
+  **Example**: `OUTPUT%OUTPUT_STRATEGY=1`
 
 ### OUTPUT%MAX_MOMENT
   Determines which (central) statistical moments are computed
+
   1: mean
+
   2: mean, standard deviation
+
   3: mean, standard deviation, skewness
+
   4: mean, standard deviation, skewness, excess kurtosis
 
-  Type: integer
+  **Type**: integer
 
-  Default: 2
+  **Default**: 2
 
-  Example: `OUTPUT%MAX_MOMENT=3`
+  **Example**: `OUTPUT%MAX_MOMENT=3`
 
 ### OUTPUT%SUPRESS_TIEGCM_OUTPUT
   This option supress the generation of TIEGCM intern history files.
 
-  Type: logical
+  **Type**: logical
 
-  Default: `.true.`
+  **Default**: `.true.`
 
-  Example: `OUTPUT%SUPRESS_TIEGCM_OUTPUT=.true.`
+  **Example**: `OUTPUT%SUPRESS_TIEGCM_OUTPUT=.true.`
 
 ### OUTPUT%USE_DOUBLE_PRECISION
   If true use 8 byte floating point numbers, else use 8 byte.
 
-  Type: logical
+  **Type**: logical
 
-  Default: `.true.`
+  **Default**: `.true.`
 
-  Example: `OUTPUT%USE_DOUBLE_PRECISION=.true.`
+  **Example**: `OUTPUT%USE_DOUBLE_PRECISION=.true.`
 
 ### OUTPUT%WRITE_EVERY_SEC
   Determines how frequent data is written. The duration in seconds is converted to number of model steps.
   If negative, every time step is saved (not recommended).
 
-  Type: integer
+  **Type**: integer
 
-  Default: -1
+  **Default**: -1
 
-  Example: `OUTPUT%WRITE_EVERY_SEC=60`
+  **Example**: `OUTPUT%WRITE_EVERY_SEC=60`
 
 ### OUTPUT%FORCE_WRITE_ON_UPDATE
   Write every analysis regardless of writing frequency determined in OUTPUT%WRITE_EVERY_SEC
 
-  Type: logical
+  **Type**: logical
 
-  Default: `.true.`
+  **Default**: `.true.`
 
-  Example: `OUTPUT%FORCE_WRITE_ON_UPDATE=.true.`
+  **Example**: `OUTPUT%FORCE_WRITE_ON_UPDATE=.true.`
 
 ### OUTPUT%LOCK_NC_TIME
   If true all variables in the NetCDF file have the same temporal dimension. With this setting it is not possible to write variables with different temporal resolution.
 
-  Type: logical
+  **Type**: logical
 
-  Default: `.true.`
+  **Default**: `.true.`
 
-  Example: `OUTPUT%LOCK_NC_TIME=.true.`
+  **Example**: `OUTPUT%LOCK_NC_TIME=.true.`
+
+## calibration
+
+### CALIBRATION%APPLY
+  Enables co-estimation of model parameters. The parameters are selected in the `parameters` group.
+
+  **Type**: logical
+
+  **Default**: `.false.`
+
+  **Example**: `CALIBRATION%APPLY=.true.`
+
+### CALIBRATION%LOCALIZATION_TAPERING
+  Tapering factor applied in the update step for the co-estiamted parameters.
+
+  **Type**: real
+
+  **Default**: `1.0`
+
+  **Example**: `CALIBRATION%LOCALIZATION_TAPERING=1.0`
+
+### CALIBRATION%EVERY
+  Controls how often the parameters are co-estimated. One indicates, that parameters are co-estimated at every analysis step, two indicates they are indicated every second anlaysis step, and so on.
+
+  **Type**: integer
+
+  **Default**: `1`
+
+  **Example**: `CALIBRATION%EVERY=10`
+
+## constraints
+After each analysis steps constraints are applied to ensure the state is physically consistent.
+
+### CONSTRAINTS%QUASI_NEUTRAL_IONOSPHERE [expert, experimental]
+  Replaces electron density by the sum of all ions. Not recommended.
+
+  **Type**: logical
+
+  **Default**: `.false.`
+
+  **Example**: `CONSTRAINTS%QUASI_NEUTRAL_IONOSPHERE=.false.`
+
+## parameters
+
+### PARAMETERS%ENSEMBLE_FILE
+  Default path to NetCDF file containing the parameter perturbations for all ensemble members.
+
+  **Type**: string
+
+  **Default**: `""`
+
+  **Example**: `PARAMETERS%ENSEMBLE_FILE="./perturbations.nc"`
+
+### paramter setup
+Currently the following parameters can be controlled:
+
+* f107
+* ctpoten
+* hspower
+* tlbc
+* zlbc
+* ulbc
+* vlbc
+* alfac
+* alfad
+* colfac
+* joulefac
+* swden
+* swvel
+* imfbx
+* imfby
+* imfbz
+* imfbf
+* igrf_sh
+* co2u
+
+Each parameter has two settings
+
+#### HANDLING
+  Controlls how the program handels a paramter:
+
+  "none": the parameter is not influenced by the assimilation system
+
+  "perturb": Perturb the parameter according to the perturbations in the specified ensemble file.
+
+  "calibrate": Co-estimate the parameter
+
+  "overwrite": overwrite the parameter by the values (not pertubations) specified in ensemble file
+
+  "mean": replace the parameter with the ensemble mean specified in the ensemble file
+
+  **Type**: string
+
+  **Default**: `"none"`
+
+  **Example**:  `PARAMETERS%F107%HANDLING="perturb"`
+
+#### ENSEMBLE_FILE
+  Either the path to an ensemble file or "default". In case of default the file specified in `PARAMETERS%ENSEMBLE_FILE` is used.
+
+  **Type**: string
+
+  **Default**: `"default"`
+
+  **Example**:  `PARAMETERS%F107%ENSEMBLE_FILE="./some_file"`
+
+## filter
+Controlls the Kalman filter
+
+### FILTER%OPEN_LOOP
+  When performing an open loop simulation all ensemble members are forwarded an perturbed but observations are not assimilated. The filter is not applied.
+
+  **Type**: logical
+
+  **Default**: `.false.`
+
+  **Example**: ` FILTER%OPEN_LOOP=.true.`
+
+
+### FILTER%SPLINE_DEGREE
+  Controlls how the observation operator interpolates the state to the observation space.
+
+  1 linear interpolation
+
+  2 quadratic B-spline
+
+  3 cubic B-spline
+
+  4 quartic B-spline
+
+  5 quintic B-spline
+
+  **Type**: integer
+
+  **Default**: 3
+
+  **Example**: `FILTER%SPLINE_DEGREE=3`
+
+### FILTER%FIRST_ANALYSIS_STEP_SEC
+
+  Specifies after how many seconds after initalizing the model, the first analysis step is performed
+
+  **Type**: integer
+
+  **Default**: 0
+
+  **Example**: `FILTER%FIRST_ANALYSIS_STEP_SEC=60`
+
+### FILTER%FORECAST_DURATION_SEC
+
+  Specifies the duration in seconds between two subsequent analysis steps
+
+  **Type**: integer
+
+  **Default**: 0
+
+  **Example**: `FILTER%FORECAST_DURATION_SEC=120`
+
+
+### FILTER%FILTERTYPE
+
+  Specifies the filter algorithm used by PDAF. Currently only the following two filters are implemented
+
+  6: global ESTKF
+
+  7: loclaized ESTKF
+
+  **Type**: integer
+
+  **Default**: 6
+
+  **Example**: `FILTER%FILTERTYPE=7`
+
+### FILTER%SUBTYPE [expert]
+
+  Specifies the sub type ([see PDAF wiki](https://pdaf.awi.de/trac/wiki/AvailableOptionsforInitPDAF))
+
+  **Type**: integer
+
+  **Default**: 0
+
+  **Example**: `FILTER%SUBTYPE=0`
+
+### FILTER%TYPE_TRANS [expert]
+
+  Specifies the type of ensemble transformation matrix ([see PDAF wiki](https://pdaf.awi.de/trac/wiki/AvailableOptionsforInitPDAF))
+
+  **Type**: integer
+
+  **Default**: 0
+
+  **Example**: `FILTER%TYPE_TRANS=0`
+
+### FILTER%TYPE_FORGET [expert]
+
+  Specifies the type of forgetting factor ([see PDAF wiki](https://pdaf.awi.de/trac/wiki/AvailableOptionsforInitPDAF))
+
+  **Type**: integer
+
+  **Default**: 0
+
+  **Example**: `FILTER%TYPE_FORGET=0`
+
+### FILTER%TYPE_SQRT [expert]
+
+  Specifies the type of transformation matrix square root ([see PDAF wiki](https://pdaf.awi.de/trac/wiki/AvailableOptionsforInitPDAF))
+
+  **Type**: integer
+
+  **Default**: 0
+
+  **Example**: `FILTER%TYPE_SQRT=0`
+
+### FILTER%LOCWEIGHT
+
+  Specifies how the distance between observations and states is weighted when using localization
+
+  0: unit weight
+
+  1: exponential
+
+  2: finite function mimicing a Gaussian
+
+  **Type**: integer
+
+  **Default**: 1
+
+  **Example**: `FILTER%LOCWEIGHT=0`
+
+### FILTER%cutoff_radius
+
+  Specifies the cutoff radius for localization in zonal, meridional and vertical direction. Units dpends on `filter%localization_coord_sys`
+
+  **Type**: real array
+
+  **Default**: 0,0,0
+
+  **Example**: `FILTER%CUTOFF_RADIUS= 1000E+3,1000E+3,50E+3`
+
+### FILTER%SUPPORT_RADIUS
+
+  Specifies the support radius for localization in zonal, meridional and vertical direction. Units dpends on `filter%localization_coord_sys`
+
+  **Type**: real array
+
+  **Default**: 0,0,0
+
+  **Example**: `FILTER%SUPPORT_RADIUS= 1000E+3,1000E+3,50E+3`
+
+### FILTER%LOCALIZATION_COORD_SYS
+
+  Specifies how distance between observations and states is measured
+
+  1: distance in meters computed using haversine formula
+
+  2: distance in number of grid cells
+
+  **Type**: integer
+
+  **Default**: 1
+
+  **Example**: `FILTER%LOCALIZATION_COORD_SYS=1`
+
+### FILTER%SUB_DOMAIN_SIZE_VERTICAL
+
+  vertical extent of sub domains (number of grid cells)
+
+  **Type**: integer
+
+  **Default**: 3
+
+  **Example**: `FILTER%SUB_DOMAIN_SIZE_VERTICAL=1`
+
+### FILTER%SUB_DOMAIN_SIZE_ZONAL
+
+  zonal extent of sub domains (number of grid cells)
+
+  **Type**: integer
+
+  **Default**: 3
+
+  **Example**: `FILTER%SUB_DOMAIN_SIZE_ZONAL=1`
+
+### FILTER%SUB_DOMAIN_SIZE_MERIDIONAL
+
+  meridional extent of sub domains (number of grid cells)
+
+  **Type**: integer
+
+  **Default**: 3
+
+  **Example**: `FILTER%SUB_DOMAIN_SIZE_MERIDIONAL=1`
+
+## state
+Controlls the composition of the state vector
+
+### STATE%O2
+  add molecular Oxygen mass fraction to state vector
+
+  **Type**: logical
+
+  **Default**: `.false.`
+
+  **Example**: `STATE%O2=.true.`
+
+### STATE%O1
+  add atomic Oxygen mass fraction to state vector
+
+  **Type**: logical
+
+  **Default**: `.false.`
+
+  **Example**: `STATE%O1=.true.`
+
+### STATE%HE
+  add atomic Helium mass fraction to state vector
+
+  **Type**: logical
+
+  **Default**: `.false.`
+
+  **Example**: `STATE%HE=.true.`
+
+### STATE%TN
+  add neutral temperature to state vector
+
+  **Type**: logical
+
+  **Default**: `.false.`
+
+  **Example**: `STATE%TN=.true.`
+
+### STATE%NE
+  add electron number density to state vector
+
+  **Type**: logical
+
+  **Default**: `.false.`
+
+  **Example**: `STATE%NE=.true.`
+
+### STATE%ZONAL_WIND
+  add zonal wind velocity to state vector
+
+  **Type**: logical
+
+  **Default**: `.false.`
+
+  **Example**: `STATE%ZONAL_WIND=.true.`
+
+### STATE%MERIDIONAL_WIND
+  add meridional wind velocity to state vector
+
+  **Type**: logical
+
+  **Default**: `.false.`
+
+  **Example**: `STATE%MERIDIONAL_WIND=.true.`
+
+### STATE%ATOMIC_OXYGEN_ION_DENSITY
+  add atomic oxygen ion number density to state vector
+
+  **Type**: logical
+
+  **Default**: `.false.`
+
+  **Example**: `STATE%ATOMIC_OXYGEN_ION_DENSITY=.true.`
+
+### STATE%MOLECULAR_OXYGEN_ION_DENSITY
+  add molecular oxygen ion number density to state vector
+
+  **Type**: logical
+
+  **Default**: `.false.`
+
+  **Example**: `STATE%MOLECULAR_OXYGEN_ION_DENSITY=.true.`
+
+### STATE%MERIDIONAL_WIND
+  add meridional wind velocity to state vector
+
+  **Type**: logical
+
+  **Default**: `.false.`
+
+  **Example**: `STATE%MERIDIONAL_WIND=.true.`
+
+### STATE%ATOMIC_ARGON
+  add mass fraction of atomic argon to state vector
+
+  **Type**: logical
+
+  **Default**: `.false.`
+
+  **Example**: `STATE%ATOMIC_ARGON=.true.`
+
+### STATE%NITRIC_OXIDE
+  add mass fraction of nitric oxide to state vector
+
+  **Type**: logical
+
+  **Default**: `.false.`
+
+  **Example**: `STATE%NITRIC_OXIDE=.true.`
+
+### STATE%EXCITED_ATOMIC_NITROGEN_4S
+  add mass fraction of excited Nitrogen in 4S atomic state to state vector
+
+  **Type**: logical
+
+  **Default**: `.false.`
+
+  **Example**: `STATE%EXCITED_ATOMIC_NITROGEN_4S=.true.`
+
+### STATE%EXCITED_ATOMIC_NITROGEN_2D
+  add mass fraction of excited Nitrogen in 2D atomic state to state vector
+
+  **Type**: logical
+
+  **Default**: `.false.`
+
+  **Example**: `STATE%EXCITED_ATOMIC_NITROGEN_2D=.true.`
+
+### STATE%ELECTRON_TEMPERATURE
+  add electron temperature to state vector
+
+  **Type**: logical
+
+  **Default**: `.false.`
+
+  **Example**: `STATE%ELECTRON_TEMPERATURE=.true.`
+
+### STATE%ION_TEMPERATURE
+  add ion temperature to state vector
+
+  **Type**: logical
+
+  **Default**: `.false.`
+
+  **Example**: `STATE%ION_TEMPERATURE=.true.`
+
+## ensemble
+
+### ENSEMBLE%ENSEMBLE_SIZE
+
+  controlls the ensemble size/number of ensemble members
+
+  **Type**: integer
+
+  **Default**: 0
+
+  **Example**: `ENSEMBLE%ENSEMBLE_SIZE=96`
+
+### ENSEMBLE%OVERWRITE_SOURCE
+
+  If disabled, the inital state is initalized according to the TIEGCM input file. When enabled, the state of each member is initalized according to `ENSEMBLE%SOURCE_PATH` and `ENSEMBLE%SOURCE_NAME`.
+
+  **Type**: logical
+
+  **Default**: `.false.`
+
+  **Example**: `ENSEMBLE%OVERWRITE_SOURCE=.true.`
+
+### ENSEMBLE%SOURCE_PATH
+
+  Path to the directorty containing for each member a TIEGCM primary history file. The files have to start with `ens_xxxx_` where xxxx is a the index of the ensemle member with leading zeros. The files can be created by conducting an open loop simulation. The assimilation system will then autmatically genrate the history files with the correct naming schema.
+
+  **Type**: string
+
+  **Default**: `""`
+
+  **Example**: `ENSEMBLE%SOURCE_PATH=/path/to/the/primary/history/files/for/each/member`
+
+
+### ENSEMBLE%SOURCE_NAME
+
+  The constant part of the history file name after `ens_xxxx_`
+  **Type**: string
+
+  **Default**: `""`
+
+  **Example**: `ENSEMBLE%SOURCE_NAME=init`
+
+## observations
+
+### OBSERVATION%SATELLITE()
+
+This is for observations along the orbit of a satellite. Data from multiple satellites can be assimilated simultaneously. Currently only total mass densities can be assimilated.
+
+#### OBSERVATION%SATELLITE()%APPLY
+  assimilate this observation
+
+  **Type**: logical
+
+  **Default**: `.false.`
+
+  **Example**: `OBSERVATION%SATELLITE(1)%APPLY=.true.`
+
+#### OBSERVATION%SATELLITE()%ALWAYS_SAVE
+  interpolate the model grid to the location of the observation and save it to the result file, even when it is not assimilated. Usefull for open loop simulations.
+
+  **Type**: logical
+
+  **Default**: `.false.`
+
+  **Example**: `OBSERVATION%SATELLITE(1)%ALWAYS_SAVE=.true.`
+
+#### OBSERVATION%SATELLITE()%FILE_FORMAT
+  Format of the file containing the observations
+
+  "igg" https://doi.pangaea.de/10.1594/PANGAEA.931347
+
+  "toleos" http://thermosphere.tudelft.nl/page1.html
+
+  "toleos_reduced" some toleos files store data with reduced accuracy
+
+  **Type**: string
+
+  **Default**: igg
+
+  **Example**: `OBSERVATION%SATELLITE(1)%FILE_FORMAT="igg"`
+
+#### OBSERVATION%SATELLITE()%FILE
+  Path to the file containing the observations in format specified in `OBSERVATION%SATELLITE()%FILE_FORMAT`.  Bash shell wildcards, e.g. `*`, or `[]` are supported and should be used if the data is distributed over multiple files.
+
+  **Type**: string
+
+  **Default**: igg
+
+  **Example**: `OBSERVATION%SATELLITE(1)%FILE="/locatio/of/the/file"`
+
+#### OBSERVATION%SATELLITE()%NAME
+  name used to save the data in the result file.
+
+  **Type**: string
+
+  **Default**: igg
+
+  **Example**: `OBSERVATION%SATELLITE(1)%FILE="satellitename"`
+
+#### OBSERVATION%SATELLITE()%WEIGHT
+  Currently it is assumed that the uncertainty is 10% of the value itself. The standard deviation is divided by the weight factor.
+
+  **Type**: real
+
+  **Default**: 1.0
+
+  **Example**: `OBSERVATION%SATELLITE(1)%WEIGHT=2.0`
+
+#### OBSERVATION%SATELLITE()%WRITE_EVERY_SEC
+  Determines how frequent data at the location of the observation is written. The duration in seconds is converted to number of model steps.
+  If negative, every time step is saved (not recommended).
+
+  **Type**: integer
+
+  **Default**: -1
+
+  **Example**: `OBSERVATION%SATELLITE(1)%WRITE_EVERY_SEC=600`
+
+#### OBSERVATION%SATELLITE()%FORCE_WRITE_ON_UPDATE
+  Write every analysis regardless of writing frequency determined in `OBSERVATION%SATELLITE()%WRITE_EVERY_SEC`
+
+  **Type**: logical
+
+  **Default**: `.true.`
+
+  **Example**: `OBSERVATION%SATELLITE(1)%FORCE_WRITE_ON_UPDATE=.false.`
+
+## logger
+
+### LOGGER%VERBOSE_LEVEL
+  Controlls how verbosise the output is. Currently there are only two options 0 and 1.
+
+  **Type**: integer
+
+  **Default**: 0
+
+  **Example**: `LOGGER%VERBOSE_LEVEL=0`
