@@ -1,14 +1,14 @@
 This NCAR HAO TIE-GCM fork was created at the Institute for Geodesy and Geoinformation (University of Bonn) by the Group of Astronomical, Physical, and Mathematical Geodesy.
 
-This fork includes modification to combine TIE-GCM 3.0 with the parallel data assimilation framework (PDAF).
+This fork includes modifications to combine TIE-GCM 3.0 with the parallel data assimilation framework (PDAF).
 
 
 
 # Main modifications
 * PDAF integration (must be enabled by using `-DUSEPDAF` preprocessor flag)
 * using `mpi_f08`
-* some additional consitency checks/limits
-* some variables are no longer hard coded, so they can be perturbed
+* some additional consistency checks/limits
+* some variables are no longer hard-coded, so they can be perturbed
 * alternative makefile
 
 # Installation
@@ -16,7 +16,7 @@ This fork includes modification to combine TIE-GCM 3.0 with the parallel data as
 You need
 * a compiler supporting Fortran 2018 features (e.g., GCC 11)
 * a MPI implementation supporting mpi_f08 interface (e.g., openMPI 4.1.4)
-* a LAPACK implpementation (e.g., OpenBLAS-0.3.20)
+* a LAPACK implementation (e.g., OpenBLAS-0.3.20)
 * NetCDF-fortran with nc4 support and parallel IO (requires HDF)
 
 ## Install submodules
@@ -32,7 +32,7 @@ Follow the [installation instructions](https://pdaf.awi.de/trac/wiki/CompilingPd
 ### geodetic-fortran-utilities
 `cd deps/geodetic-fortran-utilities`
 
-First you need to set the correct paths in `Make.hostname`. `hostname` is the name of the computer where you compile the program. Use the file `Make.gfortran` as template.
+First, you need to set the correct paths in `Make.hostname`. `hostname` is the name of the computer where you compile the program. Use the file `Make.gfortran` as template.
 Here, you have to set only three variables, e.g.,
 ``` bash
 FC:=gfortran
@@ -43,14 +43,14 @@ OPTIM:=-O3 -g -march=native
 ` make -j 8`
 
 ## Install TIE-GCM
-Change the path to the root directorty of the repository.
+Change the path to the root directory of the repository.
 
-First you need to set the correct paths in `Make.hostname`. `hostname` is the name of the computer where you compile the program. Use the file `Make.gfortran` as template.
+First, you need to set the correct paths in `Make.hostname`. `hostname` is the name of the computer where you compile the program. Use the file `Make.gfortran` as a template.
 
 Try first to install TIE-GCM without PDAF binding using
 `WITH_PDAF=FALSE EXE_NAME=tiegcm5.0 BUILD_DIR=build/tiegcm5.0 TGCM_RES=LOW make`
 
-if no error occures install TIE-GCM with PDAF binding
+If no error occurs install TIE-GCM with PDAF binding
 
 ```
 rm -rf Depends
@@ -59,14 +59,14 @@ WITH_PDAF=TRUE EXE_NAME=tiegcm5.0-pdaf BUILD_DIR=build/tiegcm5.0-pdaf TGCM_RES=L
 
 # Configuration
 
-TIEGCM settings are controlled by a [namelist file](https://www.hao.ucar.edu/modeling/tgcm/tiegcm2.0/userguide/html/namelist.html#example-namelist-input-files). The path to this file is the first argument to the executable. When using TIE-GCM-PDAF the executable has a second argument which is the path to another namelist file that controlles the assimilation setup. The namelist parameters are explained in the following:
+TIEGCM settings are controlled by a [namelist file](https://www.hao.ucar.edu/modeling/tgcm/tiegcm2.0/userguide/html/namelist.html#example-namelist-input-files). The path to this file is the first argument to the executable. When using TIE-GCM-PDAF, the executable has a second argument, which is the path to another namelist file that controls the assimilation setup. The namelist parameters are explained in the following:
 
 ## Output
 
-In addition to the history files TIE-GCM-PDAF has its own writer, whcih is controlled by this group.
+In addition to the history files, TIE-GCM-PDAF has its own writer, which is controlled by this group.
 
 ### OUTPUT%RESULT_FILE_NAME_TAG
-  Name of the NetCDF file(s). ".nc" is added autmatically.
+  Name of the NetCDF file(s). ".nc" is added automatically.
 
   **Type**: string
 
@@ -75,7 +75,7 @@ In addition to the history files TIE-GCM-PDAF has its own writer, whcih is contr
   **Example**: `OUTPUT%RESULT_FILE_NAME_TAG="test"`
 
 ### OUTPUT%SAVED_FIELDS
-  List of quantities that are included in result file. Maximum supported number of quantities is 20.
+  List of quantities that are included in the result file. The maximum supported number of quantities is 20.
 
   **Type**: string array
 
@@ -84,7 +84,7 @@ In addition to the history files TIE-GCM-PDAF has its own writer, whcih is contr
   **Example**: `OUTPUT%RESULT_FILE_NAME_TAG='DEN', 'O1', 'O2', 'HE', 'TN', 'NE',`
 
 ### OUTPUT%SAVE_STATE
-  If true, in addition to the quantities specified in OUTPUT%SAVED_FIELDS, all quantities of the state vector at time step i are also written.
+  If true, in addition to the quantities specified in OUTPUT%SAVED_FIELDS, all state vector quantities at time step i are also written.
 
   **Type**: logical
 
@@ -102,7 +102,7 @@ In addition to the history files TIE-GCM-PDAF has its own writer, whcih is contr
   **Example**: `OUTPUT%SAVE_STATE_NM=.true.`
 
 ### OUTPUT%SAVE_OBS
-  If true, in addition to the quantities specified in OUTPUT%SAVED_FIELDS, all observed quantities also written.
+  If true, in addition to the quantities specified in OUTPUT%SAVED_FIELDS, all observed quantities are also written.
 
   **Type**: logical
 
@@ -111,7 +111,7 @@ In addition to the history files TIE-GCM-PDAF has its own writer, whcih is contr
   **Example**: `OUTPUT%SAVE_OBS=.true.`
 
 ### OUTPUT%SAVE_MEMBERS
-  Write all ensemle members to the file. This may result in very large files.
+  Write all ensemble members to the file. This may result in very large files.
 
   **Type**: logical
 
@@ -120,7 +120,7 @@ In addition to the history files TIE-GCM-PDAF has its own writer, whcih is contr
   **Example**: `OUTPUT%SAVE_MEMBERS=.true.`
 
 ### OUTPUT%SAVE_UNCONSTRAINED_ANALYSIS [expert]
-  Write the results of the analysis step before the constraints are applied. The constrained quantites are written regardless of this option.
+  Write the results of the analysis step before applying the constraints. The constrained quantities are written regardless of this option.
 
   **Type**: logical
 
@@ -129,7 +129,7 @@ In addition to the history files TIE-GCM-PDAF has its own writer, whcih is contr
   **Example**: `OUTPUT%SAVE_UNCONSTRAINED_ANALYSIS=.true.`
 
 ### OUTPUT%SYNC_EVERY
-  Syncing the nc files is a costly operation. This parameter controlls after how many time steps with a writing operation the file is sync. If the model crashes befor data was syncronized it is lost.
+  Syncing the nc files is a costly operation. This parameter controls how many time steps after a writing operation the file is synced. If the model crashes before the data is synchronized, it is lost.
 
   **Type**: integer
 
@@ -140,7 +140,7 @@ In addition to the history files TIE-GCM-PDAF has its own writer, whcih is contr
 ### OUTPUT%OUTPUT_STRATEGY [expert]
   1: single writer - single file (recommended)
 
-  2: multiple writeres - multiples files
+  2: multiple writers - multiple files
 
   **Type**: integer
 
@@ -166,7 +166,7 @@ In addition to the history files TIE-GCM-PDAF has its own writer, whcih is contr
   **Example**: `OUTPUT%MAX_MOMENT=3`
 
 ### OUTPUT%SUPRESS_TIEGCM_OUTPUT
-  This option supress the generation of TIEGCM intern history files.
+  This option suppresses the generation of TIEGCM intern history files.
 
   **Type**: logical
 
@@ -175,7 +175,7 @@ In addition to the history files TIE-GCM-PDAF has its own writer, whcih is contr
   **Example**: `OUTPUT%SUPRESS_TIEGCM_OUTPUT=.true.`
 
 ### OUTPUT%USE_DOUBLE_PRECISION
-  If true use 8 byte floating point numbers, else use 8 byte.
+  If true, use 8-byte floating-point numbers; else, use 4-byte floating-point numbers.
 
   **Type**: logical
 
@@ -184,7 +184,7 @@ In addition to the history files TIE-GCM-PDAF has its own writer, whcih is contr
   **Example**: `OUTPUT%USE_DOUBLE_PRECISION=.true.`
 
 ### OUTPUT%WRITE_EVERY_SEC
-  Determines how frequent data is written. The duration in seconds is converted to number of model steps.
+  Determines how frequently data is written. The duration in seconds is converted to the number of model steps.
   If negative, every time step is saved (not recommended).
 
   **Type**: integer
@@ -203,7 +203,7 @@ In addition to the history files TIE-GCM-PDAF has its own writer, whcih is contr
   **Example**: `OUTPUT%FORCE_WRITE_ON_UPDATE=.true.`
 
 ### OUTPUT%LOCK_NC_TIME
-  If true all variables in the NetCDF file have the same temporal dimension. With this setting it is not possible to write variables with different temporal resolution.
+  If true, all variables in the NetCDF file have the same temporal dimension. With this setting, it is not possible to write variables with different temporal resolutions.
 
   **Type**: logical
 
@@ -223,7 +223,7 @@ In addition to the history files TIE-GCM-PDAF has its own writer, whcih is contr
   **Example**: `CALIBRATION%APPLY=.true.`
 
 ### CALIBRATION%LOCALIZATION_TAPERING
-  Tapering factor applied in the update step for the co-estiamted parameters.
+  Tapering factor applied in the update step for the co-estimated parameters.
 
   **Type**: real
 
@@ -232,7 +232,7 @@ In addition to the history files TIE-GCM-PDAF has its own writer, whcih is contr
   **Example**: `CALIBRATION%LOCALIZATION_TAPERING=1.0`
 
 ### CALIBRATION%EVERY
-  Controls how often the parameters are co-estimated. One indicates, that parameters are co-estimated at every analysis step, two indicates they are indicated every second anlaysis step, and so on.
+  Controls how often the parameters are co-estimated. `1 ` indicates that parameters are co-estimated at every analysis step, `2` indicates they are estimated every second analysis step, and so on.
 
   **Type**: integer
 
@@ -241,10 +241,10 @@ In addition to the history files TIE-GCM-PDAF has its own writer, whcih is contr
   **Example**: `CALIBRATION%EVERY=10`
 
 ## constraints
-After each analysis steps constraints are applied to ensure the state is physically consistent.
+After each analysis step, constraints are applied to ensure the state is physically consistent.
 
 ### CONSTRAINTS%QUASI_NEUTRAL_IONOSPHERE [expert, experimental]
-  Replaces electron density by the sum of all ions. Not recommended.
+  Replaces electron density with the sum of all ions. Not recommended.
 
   **Type**: logical
 
@@ -264,7 +264,7 @@ After each analysis steps constraints are applied to ensure the state is physica
   **Example**: `PARAMETERS%ENSEMBLE_FILE="./perturbations.nc"`
 
 ### paramter setup
-Currently the following parameters can be controlled:
+Currently, the following parameters can be controlled:
 
 * f107
 * ctpoten
@@ -289,7 +289,7 @@ Currently the following parameters can be controlled:
 Each parameter has two settings
 
 #### HANDLING
-  Controlls how the program handels a paramter:
+  Controls how the program handles a parameter:
 
   "none": the parameter is not influenced by the assimilation system
 
@@ -297,7 +297,7 @@ Each parameter has two settings
 
   "calibrate": Co-estimate the parameter
 
-  "overwrite": overwrite the parameter by the values (not pertubations) specified in ensemble file
+  "overwrite": overwrite the parameter by the values (not perturbations) specified inthe  ensemble file
 
   "mean": replace the parameter with the ensemble mean specified in the ensemble file
 
@@ -308,7 +308,7 @@ Each parameter has two settings
   **Example**:  `PARAMETERS%F107%HANDLING="perturb"`
 
 #### ENSEMBLE_FILE
-  Either the path to an ensemble file or "default". In case of default the file specified in `PARAMETERS%ENSEMBLE_FILE` is used.
+  Either the path to an ensemble file or "default". In case of default, the file specified in `PARAMETERS%ENSEMBLE_FILE` is used.
 
   **Type**: string
 
@@ -317,10 +317,10 @@ Each parameter has two settings
   **Example**:  `PARAMETERS%F107%ENSEMBLE_FILE="./some_file"`
 
 ## filter
-Controlls the Kalman filter
+Controls the Kalman filter
 
 ### FILTER%OPEN_LOOP
-  When performing an open loop simulation all ensemble members are forwarded an perturbed but observations are not assimilated. The filter is not applied.
+  In an open-loop simulation, all ensemble members are propagated and perturbed, but observations are not assimilated. The filter is not applied.
 
   **Type**: logical
 
@@ -330,7 +330,7 @@ Controlls the Kalman filter
 
 
 ### FILTER%SPLINE_DEGREE
-  Controlls how the observation operator interpolates the state to the observation space.
+  Controls how the observation operator interpolates the state to the observation space.
 
   1 linear interpolation
 
@@ -350,7 +350,7 @@ Controlls the Kalman filter
 
 ### FILTER%FIRST_ANALYSIS_STEP_SEC
 
-  Specifies after how many seconds after initalizing the model, the first analysis step is performed
+  Specifies how many seconds after initializing the model, the first analysis step is performed
 
   **Type**: integer
 
@@ -371,11 +371,11 @@ Controlls the Kalman filter
 
 ### FILTER%FILTERTYPE
 
-  Specifies the filter algorithm used by PDAF. Currently only the following two filters are implemented
+  Specifies the filter algorithm used by PDAF. Currently, only the following two filters are implemented.
 
   6: global ESTKF
 
-  7: loclaized ESTKF
+  7: localized ESTKF
 
   **Type**: integer
 
@@ -431,7 +431,7 @@ Controlls the Kalman filter
 
   1: exponential
 
-  2: finite function mimicing a Gaussian
+  2: finite function mimicking a Gaussian
 
   **Type**: integer
 
@@ -441,7 +441,7 @@ Controlls the Kalman filter
 
 ### FILTER%cutoff_radius
 
-  Specifies the cutoff radius for localization in zonal, meridional and vertical direction. Units dpends on `filter%localization_coord_sys`
+  Specifies the cutoff radius for localization in zonal, meridional, and vertical directions. Units depend on `filter%localization_coord_sys`
 
   **Type**: real array
 
@@ -451,7 +451,7 @@ Controlls the Kalman filter
 
 ### FILTER%SUPPORT_RADIUS
 
-  Specifies the support radius for localization in zonal, meridional and vertical direction. Units dpends on `filter%localization_coord_sys`
+  Specifies the support radius for localization in zonal, meridional, and vertical directions. Units depend on `filter%localization_coord_sys`
 
   **Type**: real array
 
@@ -461,9 +461,9 @@ Controlls the Kalman filter
 
 ### FILTER%LOCALIZATION_COORD_SYS
 
-  Specifies how distance between observations and states is measured
+  Specifies how the distance between observations and states is measured
 
-  1: distance in meters computed using haversine formula
+  1: distance in meters computed using the haversine formula
 
   2: distance in number of grid cells
 
@@ -475,7 +475,7 @@ Controlls the Kalman filter
 
 ### FILTER%SUB_DOMAIN_SIZE_VERTICAL
 
-  vertical extent of sub domains (number of grid cells)
+  vertical extent of sub-domains (number of grid cells)
 
   **Type**: integer
 
@@ -485,7 +485,7 @@ Controlls the Kalman filter
 
 ### FILTER%SUB_DOMAIN_SIZE_ZONAL
 
-  zonal extent of sub domains (number of grid cells)
+  zonal extent of sub-domains (number of grid cells)
 
   **Type**: integer
 
@@ -495,7 +495,7 @@ Controlls the Kalman filter
 
 ### FILTER%SUB_DOMAIN_SIZE_MERIDIONAL
 
-  meridional extent of sub domains (number of grid cells)
+  meridional extent of sub-domains (number of grid cells)
 
   **Type**: integer
 
@@ -504,10 +504,10 @@ Controlls the Kalman filter
   **Example**: `FILTER%SUB_DOMAIN_SIZE_MERIDIONAL=1`
 
 ## state
-Controlls the composition of the state vector
+Controls the composition of the state vector
 
 ### STATE%O2
-  add molecular Oxygen mass fraction to state vector
+  Add molecular Oxygen mass fraction to the state vector
 
   **Type**: logical
 
@@ -516,7 +516,7 @@ Controlls the composition of the state vector
   **Example**: `STATE%O2=.true.`
 
 ### STATE%O1
-  add atomic Oxygen mass fraction to state vector
+  Add atomic Oxygen mass fraction to the state vector
 
   **Type**: logical
 
@@ -525,7 +525,7 @@ Controlls the composition of the state vector
   **Example**: `STATE%O1=.true.`
 
 ### STATE%HE
-  add atomic Helium mass fraction to state vector
+  Add atomic Helium mass fraction to the state vector
 
   **Type**: logical
 
@@ -534,7 +534,7 @@ Controlls the composition of the state vector
   **Example**: `STATE%HE=.true.`
 
 ### STATE%TN
-  add neutral temperature to state vector
+  Add neutral temperature to the state vector
 
   **Type**: logical
 
@@ -543,7 +543,7 @@ Controlls the composition of the state vector
   **Example**: `STATE%TN=.true.`
 
 ### STATE%NE
-  add electron number density to state vector
+  Add electron number density to the state vector
 
   **Type**: logical
 
@@ -552,7 +552,7 @@ Controlls the composition of the state vector
   **Example**: `STATE%NE=.true.`
 
 ### STATE%ZONAL_WIND
-  add zonal wind velocity to state vector
+  Add zonal wind velocity to the state vector
 
   **Type**: logical
 
@@ -561,7 +561,7 @@ Controlls the composition of the state vector
   **Example**: `STATE%ZONAL_WIND=.true.`
 
 ### STATE%MERIDIONAL_WIND
-  add meridional wind velocity to state vector
+  Add meridional wind velocity to the state vector
 
   **Type**: logical
 
@@ -570,7 +570,7 @@ Controlls the composition of the state vector
   **Example**: `STATE%MERIDIONAL_WIND=.true.`
 
 ### STATE%ATOMIC_OXYGEN_ION_DENSITY
-  add atomic oxygen ion number density to state vector
+  Add atomic oxygen ion number density to the state vector
 
   **Type**: logical
 
@@ -579,7 +579,7 @@ Controlls the composition of the state vector
   **Example**: `STATE%ATOMIC_OXYGEN_ION_DENSITY=.true.`
 
 ### STATE%MOLECULAR_OXYGEN_ION_DENSITY
-  add molecular oxygen ion number density to state vector
+  Add molecular oxygen ion number density to the state vector
 
   **Type**: logical
 
@@ -588,7 +588,7 @@ Controlls the composition of the state vector
   **Example**: `STATE%MOLECULAR_OXYGEN_ION_DENSITY=.true.`
 
 ### STATE%MERIDIONAL_WIND
-  add meridional wind velocity to state vector
+  Add meridional wind velocity to the state vector
 
   **Type**: logical
 
@@ -597,7 +597,7 @@ Controlls the composition of the state vector
   **Example**: `STATE%MERIDIONAL_WIND=.true.`
 
 ### STATE%ATOMIC_ARGON
-  add mass fraction of atomic argon to state vector
+  Add mass fraction of atomic argon to the state vector
 
   **Type**: logical
 
@@ -606,7 +606,7 @@ Controlls the composition of the state vector
   **Example**: `STATE%ATOMIC_ARGON=.true.`
 
 ### STATE%NITRIC_OXIDE
-  add mass fraction of nitric oxide to state vector
+  Add mass fraction of nitric oxide to the state vector
 
   **Type**: logical
 
@@ -615,7 +615,7 @@ Controlls the composition of the state vector
   **Example**: `STATE%NITRIC_OXIDE=.true.`
 
 ### STATE%EXCITED_ATOMIC_NITROGEN_4S
-  add mass fraction of excited Nitrogen in 4S atomic state to state vector
+  Add mass fraction of excited Nitrogen in 4S atomic state to the state vector
 
   **Type**: logical
 
@@ -624,7 +624,7 @@ Controlls the composition of the state vector
   **Example**: `STATE%EXCITED_ATOMIC_NITROGEN_4S=.true.`
 
 ### STATE%EXCITED_ATOMIC_NITROGEN_2D
-  add mass fraction of excited Nitrogen in 2D atomic state to state vector
+  Add mass fraction of excited Nitrogen in 2D atomic state to the state vector
 
   **Type**: logical
 
@@ -633,7 +633,7 @@ Controlls the composition of the state vector
   **Example**: `STATE%EXCITED_ATOMIC_NITROGEN_2D=.true.`
 
 ### STATE%ELECTRON_TEMPERATURE
-  add electron temperature to state vector
+  Add electron temperature to the state vector
 
   **Type**: logical
 
@@ -642,7 +642,7 @@ Controlls the composition of the state vector
   **Example**: `STATE%ELECTRON_TEMPERATURE=.true.`
 
 ### STATE%ION_TEMPERATURE
-  add ion temperature to state vector
+  Add ion temperature to the state vector
 
   **Type**: logical
 
@@ -654,7 +654,7 @@ Controlls the composition of the state vector
 
 ### ENSEMBLE%ENSEMBLE_SIZE
 
-  controlls the ensemble size/number of ensemble members
+  controls the ensemble size/number of ensemble members
 
   **Type**: integer
 
@@ -664,7 +664,7 @@ Controlls the composition of the state vector
 
 ### ENSEMBLE%OVERWRITE_SOURCE
 
-  If disabled, the inital state is initalized according to the TIEGCM input file. When enabled, the state of each member is initalized according to `ENSEMBLE%SOURCE_PATH` and `ENSEMBLE%SOURCE_NAME`.
+  If disabled, the initial state is initialized according to the TIEGCM input file. When enabled, the state of each member is initialized according to `ENSEMBLE%SOURCE_PATH` and `ENSEMBLE%SOURCE_NAME`.
 
   **Type**: logical
 
@@ -674,7 +674,7 @@ Controlls the composition of the state vector
 
 ### ENSEMBLE%SOURCE_PATH
 
-  Path to the directorty containing for each member a TIEGCM primary history file. The files have to start with `ens_xxxx_` where xxxx is a the index of the ensemle member with leading zeros. The files can be created by conducting an open loop simulation. The assimilation system will then autmatically genrate the history files with the correct naming schema.
+  Path to the directory containing a TIEGCM primary history file for each member. The files have to start with `ens_xxxx_`, where xxxx is the index of the ensemble member, padded with leading zeros. The files can be created by conducting an open-loop simulation. The assimilation system will then automatically generate the history files with the correct naming schema.
 
   **Type**: string
 
@@ -696,7 +696,7 @@ Controlls the composition of the state vector
 
 ### OBSERVATION%SATELLITE()
 
-This is for observations along the orbit of a satellite. Data from multiple satellites can be assimilated simultaneously. Currently only total mass densities can be assimilated.
+This is for observations along a satellite's orbit. Data from multiple satellites can be assimilated simultaneously. Currently, only total mass densities can be assimilated.
 
 #### OBSERVATION%SATELLITE()%APPLY
   assimilate this observation
@@ -708,7 +708,7 @@ This is for observations along the orbit of a satellite. Data from multiple sate
   **Example**: `OBSERVATION%SATELLITE(1)%APPLY=.true.`
 
 #### OBSERVATION%SATELLITE()%ALWAYS_SAVE
-  interpolate the model grid to the location of the observation and save it to the result file, even when it is not assimilated. Usefull for open loop simulations.
+  interpolate the model grid to the location of the observation and save it to the result file, even when it is not assimilated. Useful for open-loop simulations.
 
   **Type**: logical
 
@@ -732,7 +732,7 @@ This is for observations along the orbit of a satellite. Data from multiple sate
   **Example**: `OBSERVATION%SATELLITE(1)%FILE_FORMAT="igg"`
 
 #### OBSERVATION%SATELLITE()%FILE
-  Path to the file containing the observations in format specified in `OBSERVATION%SATELLITE()%FILE_FORMAT`.  Bash shell wildcards, e.g. `*`, or `[]` are supported and should be used if the data is distributed over multiple files.
+  Path to the file containing the observations in the format specified in `OBSERVATION%SATELLITE()%FILE_FORMAT`.  Bash shell wildcards, e.g., `*` or `[]`, are supported and should be used if the data is distributed across multiple files.
 
   **Type**: string
 
@@ -750,7 +750,7 @@ This is for observations along the orbit of a satellite. Data from multiple sate
   **Example**: `OBSERVATION%SATELLITE(1)%FILE="satellitename"`
 
 #### OBSERVATION%SATELLITE()%WEIGHT
-  Currently it is assumed that the uncertainty is 10% of the value itself. The standard deviation is divided by the weight factor.
+  Currently, it is assumed that the uncertainty is 10% of the value itself. The standard deviation is divided by the weight factor.
 
   **Type**: real
 
@@ -759,7 +759,7 @@ This is for observations along the orbit of a satellite. Data from multiple sate
   **Example**: `OBSERVATION%SATELLITE(1)%WEIGHT=2.0`
 
 #### OBSERVATION%SATELLITE()%WRITE_EVERY_SEC
-  Determines how frequent data at the location of the observation is written. The duration in seconds is converted to number of model steps.
+  Determines how frequently data at the location of the observation is written. The duration in seconds is converted to the number of model steps.
   If negative, every time step is saved (not recommended).
 
   **Type**: integer
@@ -780,7 +780,7 @@ This is for observations along the orbit of a satellite. Data from multiple sate
 ## logger
 
 ### LOGGER%VERBOSE_LEVEL
-  Controlls how verbosise the output is. Currently there are only two options 0 and 1.
+  Controls how verbose the output is. Currently there are only two options 0 and 1.
 
   **Type**: integer
 
