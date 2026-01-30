@@ -501,10 +501,11 @@ c      call advance_nc_debug
         if (istep > 1) then
           write(6,"('Step ',i8,' of ',i8,' mtime=',4i3,
      |      ' secs/step (',a,') =',f6.2,
-     |      ' | passed time=',f6.1, ' min',' ETA= ',f6.1, ' min')") istep,
+     |      ' | passed time=', a , ' ETA= ', a)") istep,
      |      nstep,modeltime,timing_type,secs_per_step,
-     |      (current_time-ref_time)/60.0,
-     |      (real(nstep-istep)*(current_time-ref_time)/real(istep))/60.0
+     |      trim(format_duration(current_time-ref_time)),
+     |      trim(format_duration(real(nstep-istep)*
+     |           (current_time-ref_time)/real(istep)))
         else
           write(6,"('Step ',i8,' of ',i8,' mtime=',4i3)")
      |      istep,nstep,modeltime
@@ -1183,5 +1184,26 @@ c       call test_reg_grid_interpolator
       ret = 0
 
       end function signal_handler
+!-----------------------------------------------------------------------
+      function format_duration(seconds) result(str)
+            implicit none
+
+            ! args
+            real, intent(in) :: seconds
+
+            ! result
+            character(len=32) :: str
+
+            if (seconds > 86400) then
+              write(str,'(f6.2,a)') seconds/86400 ," days"
+            elseif (seconds > 3600) then
+              write(str,'(f6.1,a)') seconds/3600 ," hours"
+            elseif (seconds > 60) then
+              write(str,'(f6.1,a)') seconds/60 ," minutes"
+            else
+              write(str,'(f6.1,a)') seconds ," seconds"
+            end if
+
+      end function
 !-----------------------------------------------------------------------
       end module advance_module
