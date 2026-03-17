@@ -96,7 +96,7 @@ endif
 LDFLAGS  := $(ESMF_F90LINKOPTS) $(ESMF_F90LINKPATHS) $(ESMF_F90LINKRPATHS) $(ESMF_F90ESMFLINKLIBS)
 
 OBJDIR := $(BUILD_DIR)
-MODDIR := $(OBJDIR)
+MODDIR := $(BUILD_DIR)
 BINDIR := bin
 
 COMPILE.f18 = $(FC) $(FFLAGS) $(INCLUDE) -std=f2018 -ffree-form -fall-intrinsics -Wall -pedantic -c -o $@ -J $(MODDIR)
@@ -155,15 +155,24 @@ BIND_SRC := 	trajectory_data.F90            model_parameters.F90 \
 
 BIND_OBJS := $(BIND_SRC:%.F90=$(OBJDIR)/%.o)
 
-.phony: exe
-exe: $(BINDIR)/$(EXE_NAME)
-
 .Phony: all
 all: Depends exe
 
-.Phony:
-Depends:
+.phony: exe
+exe: $(BINDIR)/$(EXE_NAME)
+
+.Phony: Depends
+Depends: $(BUILD_DIR)/Depends
+
+$(BUILD_DIR)/Depends: | objdir moddir
+	@rm -f Depends Srcfiles
+ifeq ($(WITH_PDAF),TRUE)
 	./mkdepends $(BIND_SRC_DIR) $(TGCM_SRC_DIR) $(OBJDIR)
+else
+	./mkdepends $(TGCM_SRC_DIR) $(OBJDIR)
+endif
+	@mv Depends $(BUILD_DIR)
+	@mv Srcfiles $(BUILD_DIR)
 	
 ifeq ($(WITH_PDAF),TRUE)
 $(BIND_OBJS) : $(OBJDIR)/%.o: $(BIND_SRC_DIR)/%.F90 | gitversion objdir moddir
@@ -172,14 +181,15 @@ $(BIND_OBJS) : $(OBJDIR)/%.o: $(BIND_SRC_DIR)/%.F90 | gitversion objdir moddir
 endif
 	
 $(TGCM_OBJS) : $(OBJDIR)/%.o: $(TGCM_SRC_DIR)/%.F | objdir moddir
-	$(info $(bold)compile $<$(sgr0))
+	$(info $(bold)compile $<$(sgr0)  target: $@)
 	$(COMPILE.f77) $<
 	
 $(TGCM_OBJS_90):  $(OBJDIR)/%.o: $(TGCM_SRC_DIR)/%.F90 | objdir moddir
-	$(info $(bold)compile $<$(sgr0))
+	$(info $(bold)compile $<$(sgr0)  target: $@)
 	$(COMPILE.f90) $<
 
 $(OBJDIR)/util.o: $(TGCM_SRC_DIR)/util.F
+	$(info $(bold)compile $<$(sgr0)  target: $@)
 	$(COMPILE.f77) -fallow-invalid-boz -DLINUX $(CPPFLAGS) $(ESMF_F90COMPILEPATHS) $<
 
 
@@ -227,6 +237,5 @@ veryclean: clean
 	rm -rf $(OBJDIR)
 	rm -rf $(MODDIR)
 	rm -rf $(BINDIR)
-	rm -rf Depends
 	
-include Depends
+include $(BUILD_DIR)/Depends

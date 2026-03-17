@@ -5,6 +5,7 @@
 !Make.gfortran
 !README.md
 !LICENSE
+!install.sh
 !.gitignore
 !.gitmodules
 !mkdepends

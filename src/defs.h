@@ -5,6 +5,7 @@
 !
 ! Definitions of grid parameters for pre-processor.
 ! See parameters.h.
+! magentic field resolutionis set by NRES_GRID: 5-> 2 deg, 6 -> 1 deg, 7 -> 0.5 deg
 ! -----------------------------------------------------------------------------
 ! This file was modified for the integration of the Parallel Data Assimilation
 ! Framework (PDAF)
@@ -32,7 +33,7 @@
 #define GLON1 -180
 #define DLEV .5
 #define ZIBOT -7
-#define NRES_GRID 5 ! magentic field resolution: 5-> 2 deg, 6 -> 1 deg, 7 -> 0.5 deg
+#define NRES_GRID 5
 #endif
 !------------------------------------
 
