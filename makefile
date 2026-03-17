@@ -7,8 +7,11 @@
 #
 #
 # OPTIONS
-# WITH_PDAF=FALSE make   ... compile TIE-GCM without PDAF
-# EXE_NAME=tiegcm make   ... controlls the name of the executable
+# WITH_PDAF=TRUE make   ... if true compile TIE-GCM with PDAF coupling
+# EXE_NAME=tiegcm make  ... controlls the name of the executable
+# BUILD_DIR=build       ... controlls location of build directory
+# HIGH_RES=FALSE        ... if true use 2.5° instead of 5.0° horizontal resolution
+# ALT_EXT=FALSE         ... if true use altitude extension
 #
 #
 # created on 27 OCT 2022
@@ -34,8 +37,12 @@ ifeq ($(BUILD_DIR),)
 	BUILD_DIR=build
 endif
 
-ifeq ($(TGCM_RES),)
-	TGCM_RES=LOW
+ifeq ($(HIGH_RES),)
+	HIGH_RES=FALSE
+endif
+
+ifeq ($(ALT_EXT),)
+	ALT_EXT=FALSE
 endif
 
 ifeq ($(MAKE_MACHINE),)
@@ -50,8 +57,12 @@ include $(MAKE_MACHINE)
 
 MAKE = make
 
-ifeq ($(TGCM_RES),LOW)
-	FFLAGS+=-DLOWRES
+ifeq ($(HIGH_RES),TRUE)
+	FFLAGS+=-DHIGH_RES
+endif
+
+ifeq ($(ALT_EXT),TRUE)
+	FFLAGS+=-DALT_EXT
 endif
 
 FFLAGS+= -ffixed-line-length-80 -DMPI
