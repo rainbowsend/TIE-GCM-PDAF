@@ -19,6 +19,9 @@ You need
 * a LAPACK implementation (e.g., OpenBLAS-0.3.20)
 * NetCDF-fortran with nc4 support and parallel IO (requires HDF)
 
+> [!Important]
+> This software has been tested and developed with **gfortran** (gcc) only. Other compilers may fail to compile it.
+
 ## Install submodules
 
 pull dependencies, e.g., using `git submodule update --init`
@@ -32,7 +35,7 @@ Follow the [installation instructions](https://pdaf.awi.de/trac/wiki/CompilingPd
 ### geodetic-fortran-utilities
 `cd deps/geodetic-fortran-utilities`
 
-First, you need to set the correct paths in `Make.hostname`. `hostname` is the name of the computer where you compile the program. Use the file `Make.gfortran` as template.
+First, you need to set the correct paths in `Make.hostname`. `hostname` is the name of the computer where you compile the program. Use the file `Make.gfortran` as a template.
 Here, you have to set only three variables, e.g.,
 ``` bash
 FC:=gfortran
@@ -40,26 +43,29 @@ CXX:=g++
 OPTIM:=-O3 -g -march=native
 ```
 
-` make -j 8`
+compile the library via `make`
+
+> [!TIP]
+> You can speed up the execution of `make` using the `-j` option, enabling parallel compilation. For example, `make -j 8` will compile up to 8 files in parallel.
 
 ## Install TIE-GCM
-Change the path to the root directory of the repository.
+Change the path to the root directory of this repository.
 
 First, you need to set the correct paths in `Make.hostname`. `hostname` is the name of the computer where you compile the program. Use the file `Make.gfortran` as a template.
 
 Try first to install TIE-GCM without PDAF binding using
 `WITH_PDAF=FALSE EXE_NAME=tiegcm5.0 BUILD_DIR=build/tiegcm5.0 TGCM_RES=LOW make`
 
-If no error occurs install TIE-GCM with PDAF binding
+If no error occurs, install TIE-GCM with PDAF binding
 
 ```
 rm -rf Depends
-WITH_PDAF=TRUE EXE_NAME=tiegcm5.0-pdaf BUILD_DIR=build/tiegcm5.0-pdaf TGCM_RES=LOW make -j 8
+WITH_PDAF=TRUE EXE_NAME=tiegcm5.0-pdaf BUILD_DIR=build/tiegcm5.0-pdaf TGCM_RES=LOW make
 ```
 
 # Configuration
 
-TIEGCM settings are controlled by a [namelist file](https://www.hao.ucar.edu/modeling/tgcm/tiegcm2.0/userguide/html/namelist.html#example-namelist-input-files). The path to this file is the first argument to the executable. When using TIE-GCM-PDAF, the executable has a second argument, which is the path to another namelist file that controls the assimilation setup. The namelist parameters are explained in the following:
+TIEGCM settings are controlled by a [namelist file](https://www.hao.ucar.edu/modeling/tgcm/tiegcm2.0/userguide/html/namelist.html#example-namelist-input-files). The path to this file is the first argument to the executable. When using TIE-GCM-PDAF, the executable takes a second argument: the path to another namelist file that controls the assimilation setup. The namelist parameters are explained in the following:
 
 ## Output
 
@@ -75,7 +81,65 @@ In addition to the history files, TIE-GCM-PDAF has its own writer, which is cont
   **Example**: `OUTPUT%RESULT_FILE_NAME_TAG="test"`
 
 ### OUTPUT%SAVED_FIELDS
-  List of quantities that are included in the result file. The maximum supported number of quantities is 20.
+List of state variables that are included in the result file. The state variables are specified by the short names. Currently, all prognostic state variables, mass density (`'DEN'`), and mass fraction of molecular Nitrogen (`'N'`) are supported. To include further state variables `quantity_info.F90` has to be modified.
+  <details>
+  <summary>List of all fields that can be written</summary>
+    
+| short name | long name                                        | units      |
+| ---------- | ------------------------------------------------ | ---------- |
+| TN         | NEUTRAL TEMPERATURE                              |    K       |
+| UN         | NEUTRAL ZONAL WIND (+EAST)                       |    cm/s    |
+| VN         | NEUTRAL MERIDIONAL WIND (+NORTH)                 |    cm/s    |
+| O2         | MOLECULAR OXYGEN                                 |    mmr     |
+| O1         | ATOMIC OXYGEN                                    |    mmr     |
+| HE         | HELIUM                                           |    mmr     |
+| OP         | O+ ION                                           |    cm-3    |
+| N2D        | metastable excited nitrogen atoms N(2D)          |    mmr     |
+| N4S        | excited nitrogen atoms N(4S)                     |    mmr     |
+| NO         | NITRIC OXIDE                                     |    mmr     |
+| AR         | ARGON (AR)                                       |    MMR     |
+| TI         | ION TEMPERATURE                                  |    K       |
+| TE         | ELECTRON TEMPERATURE                             |    K       |
+| NE         | ELECTRON DENSITY                                 |    cm-3    |
+| OMEGA      | VERTICAL MOTION                                  |    s-1     |
+| O2P        | O2+ ION                                          |    cm-3    |
+| Z          | GEOPOTENTIAL HEIGHT                              |    cm      |
+| POTEN      | ELECTRIC POTENTIAL                               |    volts   |
+| TN_NM      | NEUTRAL TEMPERATURE (TIME N-1)                   |    K       |
+| UN_NM      | NEUTRAL ZONAL WIND (TIME N-1)                    |    cm/s    |
+| VN_NM      | NEUTRAL MERIDIONAL WIND (TIME N-1)               |    cm/s    |
+| O2_NM      | MOLECULAR OXYGEN (TIME N-1)                      |    mmr     |
+| O1_NM      | ATOMIC OXYGEN (TIME N-1)                         |    mmr     |
+| HE_NM      | HELIUM (TIME N-1)                                |    mmr     |
+| OP_NM      | OP (TIME N-1)                                    |    cm-3    |
+| N2D_NM     | N2D (TIME N-1)                                   |    mmr     |
+| N4S_NM     | excited nitrogen atoms N(4S) (TIME N-1)          |    mmr     |
+| NO_NM      | NO (TIME N-1)                                    |    mmr     |
+| AR_NM      | ARGON (TIME N-1)                                 |    MMR     |
+| MBAR       | MEAN MOLECULAR WEIGHT                            |            |
+| BARM       | MEAN MOLECULAR WEIGHT                            |            |
+| XNMBAR     | p0*e(-z)/kT*mbar                                 |            |
+| XNMBARI    | p0*e(-z)/kT*barm                                 |            |
+| SCHT       | SCALE HEIGHT AT MIDPOINTS                        |    cm      |
+| SCHTI      | SCALE HEIGHT AT INTERFACES                       |    cm      |
+| VC         | COS(PHI)*VN                                      |            |
+| TN_G       | NEUTRAL TEMPERATURE gradient                     |    K 1/s   |
+| UN_G       | NEUTRAL ZONAL WIND (+EAST) gradient              |    cm/s 1/s|
+| VN_G       | NEUTRAL MERIDIONAL WIND (+NORTH) gradient        |    cm/s 1/s|
+| O2_G       | MOLECULAR OXYGEN gradient                        |    mmr 1/s |
+| O1_G       | ATOMIC OXYGEN gradient                           |    mmr 1/s |
+| HE_G       | HELIUM gradient                                  |    mmr 1/s |
+| OP_G       | O+ ION gradient                                  |    cm-3 1/s|
+| N2D_G      | metastable excited nitrogen atoms N(2D) gradient |    mmr 1/s |
+| N4S_G      | excited nitrogen atoms N(4S) gradient            |    mmr 1/s |
+| NO_G       | NITRIC OXIDE gradient                            |    mmr 1/s |
+| AR_G       | ARGON (AR) gradient                              |    MMR 1/s |
+| DEN        | neutral mass density                             |    g/cm3   |
+| DEN_NM     | neutral mass density                             |    g/cm3   |
+| ZG         | geometric height at interfaces                   |    cm      |
+| ZGMID      | geometric height at midpoints                    |    cm      |
+| N2         | molecular nitrogen                               |    mmr     |
+  </details>
 
   **Type**: string array
 
@@ -120,6 +184,7 @@ In addition to the history files, TIE-GCM-PDAF has its own writer, which is cont
   **Example**: `OUTPUT%SAVE_MEMBERS=.true.`
 
 ### OUTPUT%SAVE_UNCONSTRAINED_ANALYSIS [expert]
+
   Write the results of the analysis step before applying the constraints. The constrained quantities are written regardless of this option.
 
   **Type**: logical
@@ -133,7 +198,7 @@ In addition to the history files, TIE-GCM-PDAF has its own writer, which is cont
 
   **Type**: integer
 
-  **Default**: 10
+  **Default**: `10`
 
   **Example**: `OUTPUT%SYNC_EVERY=100`
 
@@ -144,7 +209,7 @@ In addition to the history files, TIE-GCM-PDAF has its own writer, which is cont
 
   **Type**: integer
 
-  **Default**: 1
+  **Default**: `1`
 
   **Example**: `OUTPUT%OUTPUT_STRATEGY=1`
 
@@ -161,7 +226,7 @@ In addition to the history files, TIE-GCM-PDAF has its own writer, which is cont
 
   **Type**: integer
 
-  **Default**: 2
+  **Default**: `2`
 
   **Example**: `OUTPUT%MAX_MOMENT=3`
 
@@ -173,6 +238,9 @@ In addition to the history files, TIE-GCM-PDAF has its own writer, which is cont
   **Default**: `.true.`
 
   **Example**: `OUTPUT%SUPRESS_TIEGCM_OUTPUT=.true.`
+
+> [!Warning]
+> You cannot restart the model without the TIEGCM intern files
 
 ### OUTPUT%USE_DOUBLE_PRECISION
   If true, use 8-byte floating-point numbers; else, use 4-byte floating-point numbers.
@@ -189,7 +257,7 @@ In addition to the history files, TIE-GCM-PDAF has its own writer, which is cont
 
   **Type**: integer
 
-  **Default**: -1
+  **Default**: `-1`
 
   **Example**: `OUTPUT%WRITE_EVERY_SEC=60`
 
@@ -214,7 +282,7 @@ In addition to the history files, TIE-GCM-PDAF has its own writer, which is cont
 ## calibration
 
 ### CALIBRATION%APPLY
-  Enables co-estimation of model parameters. The parameters are selected in the `parameters` group.
+  Global switch controlling co-estimation of model parameters. The parameters that should be calibrated are selected in the `parameters` group.
 
   **Type**: logical
 
@@ -254,8 +322,11 @@ After each analysis step, constraints are applied to ensure the state is physica
 
 ## parameters
 
+> [!Note]
+> This section controls various model inputs, not only model parameters. The name `PARAMETERS` is therefore somewhat misleading, but it is not changed to keep the configuration file compatible.
+
 ### PARAMETERS%ENSEMBLE_FILE
-  Default path to NetCDF file containing the parameter perturbations for all ensemble members.
+  Default path to NetCDF file containing the model input perturbations for all ensemble members.
 
   **Type**: string
 
@@ -263,8 +334,17 @@ After each analysis step, constraints are applied to ensure the state is physica
 
   **Example**: `PARAMETERS%ENSEMBLE_FILE="./perturbations.nc"`
 
-### paramter setup
-Currently, the following parameters can be controlled:
+### PARAMETERS%SKIP_LIST
+  If specified, the ensemble members in the perturbation file corresponding to the given indices (starting at 1) are excluded. The number of perturbation members saved in the file must be larger than the model ensemble size + the number of excluded perturbation members to use this option.
+
+  **Type**: integer array
+
+  **Default**: `0`
+
+  **Example**: `PARAMETERS%SKIP_LIST= 5,8,32`
+
+### parameter setup
+Currently, the following model inputs can be controlled:
 
 * f107
 * ctpoten
@@ -291,15 +371,11 @@ Each parameter has two settings
 #### HANDLING
   Controls how the program handles a parameter:
 
-  "none": the parameter is not influenced by the assimilation system
-
-  "perturb": Perturb the parameter according to the perturbations in the specified ensemble file.
-
-  "calibrate": Co-estimate the parameter
-
-  "overwrite": overwrite the parameter by the values (not perturbations) specified inthe  ensemble file
-
-  "mean": replace the parameter with the ensemble mean specified in the ensemble file
+  * `"none"`: the parameter is not influenced by the assimilation system
+  * `"perturb"`: Perturb the parameter according to the perturbations in the specified ensemble file.
+  * `"calibrate"`: Co-estimate the parameter
+  * `"overwrite"`: overwrite the parameter by the values (not perturbations) specified inthe  ensemble file
+  * `"mean"`: replace the parameter with the ensemble mean specified in the ensemble file
 
   **Type**: string
 
@@ -332,19 +408,19 @@ Controls the Kalman filter
 ### FILTER%SPLINE_DEGREE
   Controls how the observation operator interpolates the state to the observation space.
 
-  1 linear interpolation
+  `1` linear interpolation
 
-  2 quadratic B-spline
+  `2` quadratic B-spline
 
-  3 cubic B-spline
+  `3` cubic B-spline
 
-  4 quartic B-spline
+  `4` quartic B-spline
 
-  5 quintic B-spline
+  `5` quintic B-spline
 
   **Type**: integer
 
-  **Default**: 3
+  **Default**: `3`
 
   **Example**: `FILTER%SPLINE_DEGREE=3`
 
@@ -354,7 +430,7 @@ Controls the Kalman filter
 
   **Type**: integer
 
-  **Default**: 0
+  **Default**: `0`
 
   **Example**: `FILTER%FIRST_ANALYSIS_STEP_SEC=60`
 
@@ -364,7 +440,7 @@ Controls the Kalman filter
 
   **Type**: integer
 
-  **Default**: 0
+  **Default**: `0`
 
   **Example**: `FILTER%FORECAST_DURATION_SEC=120`
 
@@ -373,13 +449,13 @@ Controls the Kalman filter
 
   Specifies the filter algorithm used by PDAF. Currently, only the following two filters are implemented.
 
-  6: global ESTKF
+  `6`: global ESTKF
 
-  7: localized ESTKF
+  `7`: localized ESTKF
 
   **Type**: integer
 
-  **Default**: 6
+  **Default**: `6`
 
   **Example**: `FILTER%FILTERTYPE=7`
 
@@ -389,7 +465,7 @@ Controls the Kalman filter
 
   **Type**: integer
 
-  **Default**: 0
+  **Default**: `0`
 
   **Example**: `FILTER%SUBTYPE=0`
 
@@ -399,7 +475,7 @@ Controls the Kalman filter
 
   **Type**: integer
 
-  **Default**: 0
+  **Default**: `0`
 
   **Example**: `FILTER%TYPE_TRANS=0`
 
@@ -409,7 +485,7 @@ Controls the Kalman filter
 
   **Type**: integer
 
-  **Default**: 0
+  **Default**: `0`
 
   **Example**: `FILTER%TYPE_FORGET=0`
 
@@ -419,7 +495,7 @@ Controls the Kalman filter
 
   **Type**: integer
 
-  **Default**: 0
+  **Default**: `0`
 
   **Example**: `FILTER%TYPE_SQRT=0`
 
@@ -427,15 +503,15 @@ Controls the Kalman filter
 
   Specifies how the distance between observations and states is weighted when using localization
 
-  0: unit weight
+  `0`: unit weight
 
-  1: exponential
+  `1`: exponential
 
-  2: finite function mimicking a Gaussian
+  `2`: finite function mimicking a Gaussian
 
   **Type**: integer
 
-  **Default**: 1
+  **Default**: `1`
 
   **Example**: `FILTER%LOCWEIGHT=0`
 
@@ -445,7 +521,7 @@ Controls the Kalman filter
 
   **Type**: real array
 
-  **Default**: 0,0,0
+  **Default**: `0,0,0`
 
   **Example**: `FILTER%CUTOFF_RADIUS= 1000E+3,1000E+3,50E+3`
 
@@ -455,7 +531,7 @@ Controls the Kalman filter
 
   **Type**: real array
 
-  **Default**: 0,0,0
+  **Default**: `0,0,0`
 
   **Example**: `FILTER%SUPPORT_RADIUS= 1000E+3,1000E+3,50E+3`
 
@@ -463,13 +539,13 @@ Controls the Kalman filter
 
   Specifies how the distance between observations and states is measured
 
-  1: distance in meters computed using the haversine formula
+  `1`: distance in meters computed using the haversine formula
 
-  2: distance in number of grid cells
+  `2`: distance in number of grid cells
 
   **Type**: integer
 
-  **Default**: 1
+  **Default**: `1`
 
   **Example**: `FILTER%LOCALIZATION_COORD_SYS=1`
 
@@ -479,7 +555,7 @@ Controls the Kalman filter
 
   **Type**: integer
 
-  **Default**: 3
+  **Default**: `3`
 
   **Example**: `FILTER%SUB_DOMAIN_SIZE_VERTICAL=1`
 
@@ -489,7 +565,7 @@ Controls the Kalman filter
 
   **Type**: integer
 
-  **Default**: 3
+  **Default**: `3`
 
   **Example**: `FILTER%SUB_DOMAIN_SIZE_ZONAL=1`
 
@@ -499,7 +575,7 @@ Controls the Kalman filter
 
   **Type**: integer
 
-  **Default**: 3
+  **Default**: `3`
 
   **Example**: `FILTER%SUB_DOMAIN_SIZE_MERIDIONAL=1`
 
@@ -658,7 +734,7 @@ Controls the composition of the state vector
 
   **Type**: integer
 
-  **Default**: 0
+  **Default**: `0`
 
   **Example**: `ENSEMBLE%ENSEMBLE_SIZE=96`
 
@@ -696,7 +772,9 @@ Controls the composition of the state vector
 
 ### OBSERVATION%SATELLITE()
 
-This is for observations along a satellite's orbit. Data from multiple satellites can be assimilated simultaneously. Currently, only total mass densities can be assimilated.
+Section to assimilate data along a satellite's orbit. 
+> [!Note]
+> Data from multiple satellites can be assimilated simultaneously. Currently, only total mass densities can be assimilated.
 
 #### OBSERVATION%SATELLITE()%APPLY
   assimilate this observation
@@ -719,15 +797,17 @@ This is for observations along a satellite's orbit. Data from multiple satellite
 #### OBSERVATION%SATELLITE()%FILE_FORMAT
   Format of the file containing the observations
 
-  "igg" https://doi.pangaea.de/10.1594/PANGAEA.931347
+  `"igg"` https://doi.pangaea.de/10.1594/PANGAEA.931347
 
-  "toleos" http://thermosphere.tudelft.nl/page1.html
+  `"toleos"` http://thermosphere.tudelft.nl/page1.html
 
-  "toleos_reduced" some toleos files store data with reduced accuracy
+  `"toleos_reduced"` some toleos files store data with reduced accuracy
+
+  `'toleos_short'` some toleos files store data with less columns
 
   **Type**: string
 
-  **Default**: igg
+  **Default**: `"igg"`
 
   **Example**: `OBSERVATION%SATELLITE(1)%FILE_FORMAT="igg"`
 
@@ -736,7 +816,7 @@ This is for observations along a satellite's orbit. Data from multiple satellite
 
   **Type**: string
 
-  **Default**: igg
+  **Default**: `''`
 
   **Example**: `OBSERVATION%SATELLITE(1)%FILE="/locatio/of/the/file"`
 
@@ -745,7 +825,7 @@ This is for observations along a satellite's orbit. Data from multiple satellite
 
   **Type**: string
 
-  **Default**: igg
+  **Default**: `''`
 
   **Example**: `OBSERVATION%SATELLITE(1)%FILE="satellitename"`
 
@@ -754,7 +834,7 @@ This is for observations along a satellite's orbit. Data from multiple satellite
 
   **Type**: real
 
-  **Default**: 1.0
+  **Default**: `1.0`
 
   **Example**: `OBSERVATION%SATELLITE(1)%WEIGHT=2.0`
 
@@ -764,7 +844,7 @@ This is for observations along a satellite's orbit. Data from multiple satellite
 
   **Type**: integer
 
-  **Default**: -1
+  **Default**: `-1`
 
   **Example**: `OBSERVATION%SATELLITE(1)%WRITE_EVERY_SEC=600`
 
@@ -780,10 +860,10 @@ This is for observations along a satellite's orbit. Data from multiple satellite
 ## logger
 
 ### LOGGER%VERBOSE_LEVEL
-  Controls how verbose the output is. Currently there are only two options 0 and 1.
+  Controls how verbose the output is. Currently, there are only two options: `0` and `1`.
 
   **Type**: integer
 
-  **Default**: 0
+  **Default**: `0`
 
   **Example**: `LOGGER%VERBOSE_LEVEL=0`
