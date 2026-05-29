@@ -1,16 +1,47 @@
-This NCAR HAO TIE-GCM fork was created at the Institute for Geodesy and Geoinformation (University of Bonn) by the Group of Astronomical, Physical, and Mathematical Geodesy.
+This NCAR HAO TIE-GCM fork was created at the Institute for Geodesy and Geoinformation (University of Bonn) by the [Group of Astronomical, Physical, and Mathematical Geodesy (APMG)](https://www.igg.uni-bonn.de/apmg/de).
 
-This fork includes modifications to combine TIE-GCM 3.0 with the parallel data assimilation framework (PDAF).
-
-> [!Note]
-> The model error is represented by an ensemble of TIE-GCM~3.0 instances. All instances are computed in parallel. A typical ensemble size is 72, which accordingly requires 72 cores. To exploit the parallelization of the TIE-GCM, even more cores are required. For example, 288 cores would be required to compute 72 instances, each running on 4 cores.
+This fork includes modifications to combine TIE-GCM 3.0 with the [parallel data assimilation framework (PDAF)](https://pdaf.awi.de/trac/wiki).
 
 # Main modifications
-* PDAF integration (must be enabled by using `-DUSEPDAF` preprocessor flag)
-* using `mpi_f08`
-* some additional consistency checks/limits
-* some variables are no longer hard-coded, so they can be perturbed
-* alternative makefile
+<details>
+  <summary>"fully parallel" PDAF integration</summary>
+  
+  * enables parallel execution of multiple TIE-GCM instances and performing data assimilation via PDAF
+  * must be enabled by using `-DUSEPDAF` preprocessor flag
+  * some variables are no longer hard-coded, so they can be perturbed
+ </details>  
+<details>
+  <summary>makefile</summary>
+  
+  * directly builds the PDAF model binding
+  * modernized the [makefile](https://github.com/rainbowsend/tiegcm/blob/7fdd3c9c7f52504f6d4333303f87f37e7b499dba/makefile)
+  * reads the configuration for each host from a different file
+  * controlled by environment variables
+</details>  
+
+ <details>
+  <summary>some additional consistency checks/limits</summary>
+   
+  * upper limit for neutral temperature
+  https://github.com/rainbowsend/tiegcm/blob/7fdd3c9c7f52504f6d4333303f87f37e7b499dba/src/dt.F#L395
+   
+  * non-negative hall conductivities
+  https://github.com/rainbowsend/tiegcm/blob/7fdd3c9c7f52504f6d4333303f87f37e7b499dba/src/lamdas.F#L312
+
+  * non-negative ion densities
+  https://github.com/rainbowsend/tiegcm/blob/7fdd3c9c7f52504f6d4333303f87f37e7b499dba/src/qinite.F#L95
+  https://github.com/rainbowsend/tiegcm/blob/7fdd3c9c7f52504f6d4333303f87f37e7b499dba/src/qrj.F#L208
+
+</details>  
+<details>
+  <summary>ETA is calculated and written to console</summary>
+
+  ```
+  Step       30 of     1440 mtime= 90  0 30  0 secs/step (sys) =  2.93 | passed time=   1.3 minutes ETA=   59.7 minutes
+  ```
+  
+  https://github.com/rainbowsend/tiegcm/blob/7fdd3c9c7f52504f6d4333303f87f37e7b499dba/src/advance.F#L502-L508
+ </details>  
 
 # Installation
 
@@ -22,6 +53,9 @@ You need
 
 > [!Important]
 > This software has been tested and developed with **gfortran** (gcc) only. Other compilers may fail to compile it.
+
+> [!Note]
+> The model error is represented by an ensemble of TIE-GCM~3.0 instances. All instances are computed in parallel. A typical ensemble size is 72, which accordingly requires 72 cores. To exploit the parallelization of the TIE-GCM, even more cores are required. For example, 288 cores would be required to compute 72 instances, each running on 4 cores.
 
 ## Install submodules
 
@@ -56,13 +90,13 @@ First, you need to set the correct paths in `Make.hostname`. `hostname` is the n
 
 ### makefile options
 The make process is controlled by a few environment variables
-| variable     | default | description                                               |
-| ------------ | ------- | ----------------------------------------------------------|
-| WITH_PDAF    | TRUE    | if true compile TIE-GCM with PDAF coupling                |
-| EXE_NAME     | tiegcm  | controls the name of the executable                       |
-| BUILD_DIR    | build   | controls the location of build directory                  |
-| HIGH_RES     | FALSE   | If true use 2.5° instead of 5.0° horizontal resolution    |
-| ALT_EXTFALSE | FALSE   | if true use altitude extension                            |
+| variable  | default | description                                               |
+| --------- | ------- | ----------------------------------------------------------|
+| WITH_PDAF | TRUE    | if true compile TIE-GCM with PDAF coupling                |
+| EXE_NAME  | tiegcm  | controls the name of the executable                       |
+| BUILD_DIR | build   | controls the location of build directory                  |
+| HIGH_RES  | FALSE   | If true use 2.5° instead of 5.0° horizontal resolution    |
+| ALT_EXT   | FALSE   | if true use altitude extension                            |
 
 Try first to install TIE-GCM without PDAF binding and using the lowest resolution
 ```
@@ -77,13 +111,24 @@ WITH_PDAF=TRUE EXE_NAME=tiegcm5.0-pdaf BUILD_DIR=build/tiegcm5.0-pdaf TGCM_RES=L
 ```
 # Running
 
-The executable takes two positional arguments: the namelist file containing the TIE-GCM configuration and the namelist file containing the assimilation system configuration.
+The executable takes two positional arguments: the [namelist file](https://www.hao.ucar.edu/modeling/tgcm/tiegcm2.0/userguide/html/namelist.html#example-namelist-input-files) file containing the TIE-GCM configuration and the name list file containing the assimilation system configuration (explained below in section Configuration).
 
 To execute the assimilation system, use
 
 ```
 mpirun -np ${npes} bin/tiegcm5.0-pdaf ${tiegcm_nml} ${pdaf_nml}
 ```
+with
+
+*  the number of physical cores `${npes}`, 
+*  the path to the TIE-GCM namlist file `${tiegcm_nml}`,
+*  and the path to the assimilation system namlist file `${pdaf_nml}`
+
+> [!Tip]
+> Use the mpirun option `--output-filename ./out --merge-stderr-to-stdout` to write the output of each rank into a different file. This makes reading the log much easier.
+
+> [!Note]
+At 2.5-deg resolution, it is not recommended to use more than 8 cores per model instance, as the speed-up is low above this number.
 
 
 # Configuration
