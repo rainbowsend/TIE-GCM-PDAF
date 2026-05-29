@@ -2,7 +2,8 @@ This NCAR HAO TIE-GCM fork was created at the Institute for Geodesy and Geoinfor
 
 This fork includes modifications to combine TIE-GCM 3.0 with the parallel data assimilation framework (PDAF).
 
-
+> [!Note]
+> The model error is represented by an ensemble of TIE-GCM~3.0 instances. All instances are computed in parallel. A typical ensemble size is 72, which accordingly requires 72 cores. To exploit the parallelization of the TIE-GCM, even more cores are required. For example, 288 cores would be required to compute 72 instances, each running on 4 cores.
 
 # Main modifications
 * PDAF integration (must be enabled by using `-DUSEPDAF` preprocessor flag)
@@ -53,8 +54,20 @@ Change the path to the root directory of this repository.
 
 First, you need to set the correct paths in `Make.hostname`. `hostname` is the name of the computer where you compile the program. Use the file `Make.gfortran` as a template.
 
-Try first to install TIE-GCM without PDAF binding using
-`WITH_PDAF=FALSE EXE_NAME=tiegcm5.0 BUILD_DIR=build/tiegcm5.0 TGCM_RES=LOW make`
+### makefile options
+The make process is controlled by a few environment variables
+| variable     | default | description                                               |
+| ------------ | ------- | ----------------------------------------------------------|
+| WITH_PDAF    | TRUE    | if true compile TIE-GCM with PDAF coupling                |
+| EXE_NAME     | tiegcm  | controls the name of the executable                       |
+| BUILD_DIR    | build   | controls the location of build directory                  |
+| HIGH_RES     | FALSE   | If true use 2.5° instead of 5.0° horizontal resolution    |
+| ALT_EXTFALSE | FALSE   | if true use altitude extension                            |
+
+Try first to install TIE-GCM without PDAF binding and using the lowest resolution
+```
+WITH_PDAF=FALSE EXE_NAME=tiegcm5.0 BUILD_DIR=build/tiegcm5.0 TGCM_RES=LOW make
+```
 
 If no error occurs, install TIE-GCM with PDAF binding
 
@@ -62,6 +75,16 @@ If no error occurs, install TIE-GCM with PDAF binding
 rm -rf Depends
 WITH_PDAF=TRUE EXE_NAME=tiegcm5.0-pdaf BUILD_DIR=build/tiegcm5.0-pdaf TGCM_RES=LOW make
 ```
+# Running
+
+The executable takes two positional arguments: the namelist file containing the TIE-GCM configuration and the namelist file containing the assimilation system configuration.
+
+To execute the assimilation system, use
+
+```
+mpirun -np ${npes} bin/tiegcm5.0-pdaf ${tiegcm_nml} ${pdaf_nml}
+```
+
 
 # Configuration
 
