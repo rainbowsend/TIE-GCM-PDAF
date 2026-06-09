@@ -3,15 +3,15 @@
 #
 # if MAKE_MACHINE is not defined, this makefiles looks for a file
 # named Make.<hostname>. If this file is not found a generic configuration
-# is used
+# is used (Make.gfortran)
 #
 #
 # OPTIONS
-# WITH_PDAF=TRUE make   ... if true compile TIE-GCM with PDAF coupling
-# EXE_NAME=tiegcm make  ... controlls the name of the executable
-# BUILD_DIR=build       ... controlls location of build directory
-# HIGH_RES=FALSE        ... if true use 2.5° instead of 5.0° horizontal resolution
-# ALT_EXT=FALSE         ... if true use altitude extension
+# WITH_PDAF=TRUE   ... if true compile TIE-GCM with PDAF coupling
+# EXE_NAME=tiegcm  ... controls the name of the executable
+# BUILD_DIR=build  ... controls location of build directory
+# HIGH_RES=FALSE   ... if true use 2.5° instead of 5.0° horizontal resolution
+# ALT_EXT=FALSE    ... if true use altitude extension
 #
 #
 # created on 27 OCT 2022
@@ -158,7 +158,7 @@ BIND_OBJS := $(BIND_SRC:%.F90=$(OBJDIR)/%.o)
 .Phony: all
 all: Depends exe
 
-.phony: exe
+.Phony: exe
 exe: $(BINDIR)/$(EXE_NAME)
 
 .Phony: Depends
@@ -211,7 +211,7 @@ $(TGCM_SRC_DIR)/svn_revision.inc:
 $(TGCM_SRC_DIR)/nchist.F: $(TGCM_SRC_DIR)/svn_revision.inc
 
 
-.phony: gitversion
+.Phony: gitversion
 gitversion: $(BIND_SRC_DIR)/gitversion.inc
 
 $(BIND_SRC_DIR)/gitversion.inc: .git/HEAD .git/index
