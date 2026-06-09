@@ -109,6 +109,224 @@ If no error occurs, install TIE-GCM with PDAF binding
 rm -rf Depends
 WITH_PDAF=TRUE EXE_NAME=tiegcm5.0-pdaf BUILD_DIR=build/tiegcm5.0-pdaf TGCM_RES=LOW make
 ```
+# Data
+
+## Data required by TIE-GCM
+First, you need to gather all the data required to run the TIE-GCM. Currently, the data is available at [globus](https://app.globus.org/file-manager?origin_id=b2502c58-c3eb-470f-86d4-cbdcd0aeb6c8&origin_path=%2F) (see also https://github.com/NCAR/tiegcm/issues/54).
+
+It is recommended to download at least
+* a gpi file (containing geophysical indices)
+* the Helium coefficients file
+* GSWM files
+* For a 'Weimer' run, you need IMF and Weimer coefficient files in addition
+
+## Data required for assimilation runs
+For open-loop and assimilation runs, further data is required.
+
+### Perturbations
+The perturbation file is a netCDF file that contains, for each ensemble member, the perturbation to all model inputs that should be perturbed.
+
+<details>
+  <summary>Exemplary structure of perturbation file</summary>
+  
+``` bash
+netcdf file:perturbations_2026a_2024.nc {
+  dimensions:
+    n_igrf_coeff = 195;
+    timeinvariant = 1;
+    ensemble = 192;
+    time = 8783;
+    time_f107 = 365;
+    time_co2u = 9;
+  variables:
+    double time(time=8783);
+      :units = "seconds since 2024-01-01 00:00:00";
+
+    double time_f107(time_f107=365);
+      :units = "seconds since 2024-01-01 00:00:00";
+
+    double time_co2u(time_co2u=9);
+      :units = "seconds since 2024-01-01 00:00:00";
+
+  group: perturbations {
+    variables:
+      double tlbc(timeinvariant=1, ensemble=192);
+        :units = "Kelvin";
+
+      double zlbc(timeinvariant=1, ensemble=192);
+        :units = "cm";
+
+      double ulbc(timeinvariant=1, ensemble=192);
+        :units = "cm/s";
+
+      double vlbc(timeinvariant=1, ensemble=192);
+        :units = "cm/s";
+
+      double alfac(timeinvariant=1, ensemble=192);
+        :units = "keV";
+
+      double alfad(timeinvariant=1, ensemble=192);
+        :units = "keV";
+
+      double colfac(timeinvariant=1, ensemble=192);
+        :units = "";
+
+      double joulefac(timeinvariant=1, ensemble=192);
+        :units = "";
+
+      double igrf_sh(timeinvariant=1, ensemble=192, n_igrf_coeff=195);
+        :units = "nT";
+
+      double co2u(time_co2u=9, ensemble=192);
+        :units = "";
+
+      double swvel(time=8783, ensemble=192);
+        :units = "";
+
+      double swden(time=8783, ensemble=192);
+        :units = "";
+
+      double f107(time_f107=365, ensemble=192);
+        :units = "";
+
+      double imfby(time=8783, ensemble=192);
+        :units = "";
+
+      double imfbz(time=8783, ensemble=192);
+        :units = "";
+
+      double imfbx(time=8783, ensemble=192);
+        :units = "";
+
+    // group attributes:
+    :description = "ensemble perturbations";
+  }
+  group: members {
+    variables:
+      double alfac(timeinvariant=1, ensemble=192);
+        :units = "keV";
+
+      double alfad(timeinvariant=1, ensemble=192);
+        :units = "keV";
+
+      double colfac(timeinvariant=1, ensemble=192);
+        :units = "";
+
+      double joulefac(timeinvariant=1, ensemble=192);
+        :units = "";
+
+      double co2u(time_co2u=9, ensemble=192);
+        :units = "";
+
+      double swvel(time=8783, ensemble=192);
+        :units = "";
+
+      double swden(time=8783, ensemble=192);
+        :units = "";
+
+      double f107(time_f107=365, ensemble=192);
+        :units = "";
+
+      double imfby(time=8783, ensemble=192);
+        :units = "";
+
+      double imfbz(time=8783, ensemble=192);
+        :units = "";
+
+      double imfbx(time=8783, ensemble=192);
+        :units = "";
+
+    // group attributes:
+    :description = "ensemble members";
+  }
+  group: mean {
+    variables:
+      double alfac(timeinvariant=1);
+        :units = "keV";
+
+      double alfad(timeinvariant=1);
+        :units = "keV";
+
+      double colfac(timeinvariant=1);
+        :units = "";
+
+      double joulefac(timeinvariant=1);
+        :units = "";
+
+      double co2u(time_co2u=9);
+        :units = "";
+
+      double swvel(time=8783);
+        :units = "";
+
+      double swden(time=8783);
+        :units = "";
+
+      double f107(time_f107=365);
+        :units = "";
+
+      double imfby(time=8783);
+        :units = "";
+
+      double imfbz(time=8783);
+        :units = "";
+
+      double imfbx(time=8783);
+        :units = "";
+
+    // group attributes:
+    :description = "ensemble mean. In case the perturbations are normal distributet also the expectet value";
+  }
+  group: std {
+    variables:
+      double alfac(timeinvariant=1);
+        :units = "keV";
+
+      double alfad(timeinvariant=1);
+        :units = "keV";
+
+      double colfac(timeinvariant=1);
+        :units = "";
+
+      double joulefac(timeinvariant=1);
+        :units = "";
+
+      double co2u(time_co2u=9);
+        :units = "";
+
+      double swvel(time=8783);
+        :units = "";
+
+      double swden(time=8783);
+        :units = "";
+
+      double f107(time_f107=365);
+        :units = "";
+
+      double imfby(time=8783);
+        :units = "";
+
+      double imfbz(time=8783);
+        :units = "";
+
+      double imfbx(time=8783);
+        :units = "";
+
+    // group attributes:
+    :description = "ensemble standard deviation";
+  }
+}
+```
+
+</details>  
+
+!TODO An exemplary perturbation file is provided at
+
+### Observations
+
+* Mass density from [TOLEOS](https://thermosphere.tudelft.nl/index.html) project
+* Mass density from [TND-IGG RL01](https://doi.pangaea.de/10.1594/PANGAEA.931347)
+
 # Running
 
 The executable takes two positional arguments: the [namelist file](https://www.hao.ucar.edu/modeling/tgcm/tiegcm2.0/userguide/html/namelist.html#example-namelist-input-files) file containing the TIE-GCM configuration and the name list file containing the assimilation system configuration (explained below in section Configuration).
