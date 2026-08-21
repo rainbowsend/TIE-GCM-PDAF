@@ -320,12 +320,13 @@ netcdf file:perturbations_2026a_2024.nc {
 
 </details>  
 
-!TODO An exemplary perturbation file is provided at
+An exemplary perturbation file is provided at https://doi.org/10.60507/FK2/QMNFKG (`perturbations_2026a_2024.nc`).
 
 ### Observations
 
 * Mass density from [TOLEOS](https://thermosphere.tudelft.nl/index.html) project
 * Mass density from [TND-IGG RL01](https://doi.pangaea.de/10.1594/PANGAEA.931347)
+* Mass density from [ITSG](https://ftp.tugraz.at/pub/ITSG/satelliteOrbitProducts/operational/GRACEFO-1/neutralDensity/)
 
 # Running
 
