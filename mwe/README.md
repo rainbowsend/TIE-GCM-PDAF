@@ -5,14 +5,17 @@ This is a small, self-contained example for running TIE-GCM-PDAF. Run it with
 
 ## Limitations
 
-This setup is **not recommended for productive runs** -- results won't be
-accurate, because:
+> [!Warning]
+> This setup is **not recommended for productive runs** -- results won't be
+> accurate.
+
+This is because:
 
 * No external data is read for the lower boundary condition and external
   forcing, making them inaccurate
 * HEELIS is used instead of WEIMER, since it does not require an external
   data file
-* The ensemble spread is generated over only two days
+* The spin-up phase (generating the ensemle spread) lasts only for one day
 * The ensemble is too small to sufficiently represent model uncertainty
 
 ## Running
@@ -58,9 +61,22 @@ This writes `champ_density_comparison.png`.
 
 ## Adjusting the ensemble size
 
-Depending on your machine, you may want to change the ensemble size. Set
-`ensemble%ensemble_size` in both `ensemble_initalization/ensemble_initalization.cfg`
-and `assimilation/assimilation.cfg`, and adjust `npes` in `run.sh` accordingly
-(the number of cores must be evenly divisible by the ensemble size). The
-ensemble size cannot exceed **32**, since `data/perturbations_mwe_2010.nc`
-only provides perturbations for 32 members.
+Depending on your machine, you may want to change the ensemble size or the
+number of cores per member. Both are set at the top of `run.sh`:
+
+```
+cores_per_member=4
+n_ensemble_members=2
+```
+
+`run.sh` computes `npes` (the total number of MPI ranks) as their product,
+and automatically updates `ensemble%ensemble_size` in both
+`ensemble_initalization/ensemble_initalization.cfg` and
+`assimilation/assimilation.cfg` to match `n_ensemble_members` before running
+-- there is no need to edit the `.cfg` files by hand. Your machine must have
+at least `cores_per_member * n_ensemble_members` threads available (see the
+comments in `run.sh` for the `--oversubscribe` workaround).
+
+> [!Important]
+> The ensemble size cannot exceed **32**, since `data/perturbations_mwe_2010.nc`
+> only provides perturbations for 32 members.

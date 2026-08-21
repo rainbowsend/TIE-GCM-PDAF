@@ -2,6 +2,9 @@ This NCAR HAO TIE-GCM fork was created at the Institute for Geodesy and Geoinfor
 
 This fork includes modifications to combine TIE-GCM 3.0 with the [parallel data assimilation framework (PDAF)](https://pdaf.awi.de/trac/wiki).
 
+> [!Tip]
+> If you just want to try TIE-GCM-PDAF hands-on, see the [minimal working example](mwe/README.md) in `mwe/`.
+
 # Main modifications
 <details>
   <summary>"fully parallel" PDAF integration</summary>
