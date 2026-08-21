@@ -158,7 +158,7 @@
 ! Additional auroral parameters (see sub aurora_cons):
 ! (dimension 2 is for south, north hemispheres)
       real ::
-     |  theta0(2),    ! convection reversal boundary in radians
+     |  theta0(2),    ! convection reversal boundary in radians. Radii of convection flow reversal circle (magnetic colatitude?)
      |  offa(2),      ! offset of oval towards 0 MLT relative to magnetic pole (rad)
      |  dskofa(2),    ! offset of oval in radians towards 18 MLT (f(By))
      |  phid(2),      ! dayside convection entrance in MLT (subtract 12h since 0=noon) converted to radians (f(By))
