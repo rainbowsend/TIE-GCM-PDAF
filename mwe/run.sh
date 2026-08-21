@@ -14,7 +14,7 @@ exec=../bin/tiegcm-pdaf
 cores_per_member=4
 
 # ensemble size. Maximum number in this example is 32 (there are not more samples in perturbations_mwe_2010.nc), but for productive runs 96 or more members have been used. Must be at least two, otherwise model variance cannot be computed.
-n_ensemble_members=2
+n_ensemble_members=3
 
 # Note due to the fully parallel implementation your machine must have at least cores_per_member * n_ensemble_members threads to run this example. You can use the MPI `--oversubscribe` option to ignore this limitation. However this will heavily degrade performance.
 
