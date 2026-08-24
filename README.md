@@ -345,7 +345,7 @@ netcdf file:perturbations_2026a_2024.nc {
 
 # Running
 
-The executable takes two positional arguments: the [namelist file](https://www.hao.ucar.edu/modeling/tgcm/tiegcm2.0/userguide/html/namelist.html#example-namelist-input-files) file containing the TIE-GCM configuration and the name list file containing the assimilation system configuration (explained below in section Configuration).
+The executable takes two positional arguments: the [namelist file](https://www.hao.ucar.edu/modeling/tgcm/tiegcm2.0/userguide/html/namelist.html#example-namelist-input-files) file containing the TIE-GCM configuration and the name list file containing the assimilation system configuration (explained below in section [Configuration](#Configuration)).
 
 To execute the assimilation system, use
 
