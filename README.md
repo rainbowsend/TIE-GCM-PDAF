@@ -24,6 +24,7 @@ This fork includes modifications to combine TIE-GCM 3.0 with the [parallel data 
 
 <details>
 <summary>new module `aerostatic_diag`</summary>
+  
   * elemental functions for repeated calculations
   * modernized functions for mass density, geopotential- and geometric height calculation 
 </details>
