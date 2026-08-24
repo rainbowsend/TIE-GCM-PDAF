@@ -119,14 +119,14 @@ TGCM_SRCS :=	addfld.F         comp_ar.F   duv.F       hist.F           minor.F  
 		colath.F         dt.F        heelis.F    magpres_g.F      params.F      smooth.F
 
 
-TGCM_SRCS_90 := apex.F90 char.F90 current.F90 eclipse.F90  he_coefs.F90  interp.F90  matutil.F90  nudge.F90  subaur.F90
+TGCM_SRCS_90 := aerostatic_diag.F90 apex.F90 char.F90 current.F90 eclipse.F90  he_coefs.F90  interp.F90  matutil.F90  nudge.F90  subaur.F90
 
 TGCM_OBJS := $(TGCM_SRCS:%.F=$(OBJDIR)/%.o)
 TGCM_OBJS_90 := $(TGCM_SRCS_90:%.F90=$(OBJDIR)/%.o)
 
 BIND_SRC := 	trajectory_data.F90            model_parameters.F90 \
 		assimilate_pdaf.F90            model_parameters_handling.F90 \
-		calc_diagnostics.F90           mod_parallel_pdaf.F90 \
+		mod_parallel_pdaf.F90 \
 		callback_obs_pdafomi.F90       mpi_moments.F90 \
 		cell_id_coordinate_system.F90  nc_functionality.F90 \
 		collect_state_pdaf.F90         next_observation_pdaf.F90 \
