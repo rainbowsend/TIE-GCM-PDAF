@@ -20,7 +20,13 @@ This fork includes modifications to combine TIE-GCM 3.0 with the [parallel data 
   * modernized the [makefile](https://github.com/rainbowsend/tiegcm/blob/7fdd3c9c7f52504f6d4333303f87f37e7b499dba/makefile)
   * reads the configuration for each host from a different file
   * controlled by environment variables
-</details>  
+</details>
+
+<details>
+<summary>new module `aerostatic_diag`</summary>
+  * elemental functions for repeated calculations
+  * modernized functions for mass density, geopotential- and geometric height calculation 
+</details>
 
  <details>
   <summary>some additional consistency checks/limits</summary>
