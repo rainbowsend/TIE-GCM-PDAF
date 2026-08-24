@@ -114,6 +114,9 @@ WITH_PDAF=TRUE EXE_NAME=tiegcm5.0-pdaf BUILD_DIR=build/tiegcm5.0-pdaf TGCM_RES=L
 ```
 # Data
 
+> [!TIP]
+> The minimal working example (`mwe`) works without downloading any additional data
+
 ## Data required by TIE-GCM
 First, you need to gather all the data required to run the TIE-GCM. Currently, the data is available at [globus](https://app.globus.org/file-manager?origin_id=b2502c58-c3eb-470f-86d4-cbdcd0aeb6c8&origin_path=%2F) (see also https://github.com/NCAR/tiegcm/issues/54).
 
@@ -134,7 +137,9 @@ The perturbation file is a netCDF file that contains, for each ensemble member, 
   
 ``` bash
 netcdf file:perturbations_2026a_2024.nc {
-  dimensions:
+    dimensions:
+    bin = 37;
+    lev = 29;
     n_igrf_coeff = 195;
     timeinvariant = 1;
     ensemble = 192;
@@ -165,6 +170,9 @@ netcdf file:perturbations_2026a_2024.nc {
       double vlbc(timeinvariant=1, ensemble=192);
         :units = "cm/s";
 
+      double gswm_delay(timeinvariant=1, ensemble=192);
+        :units = "s";
+
       double alfac(timeinvariant=1, ensemble=192);
         :units = "keV";
 
@@ -181,29 +189,30 @@ netcdf file:perturbations_2026a_2024.nc {
         :units = "nT";
 
       double co2u(time_co2u=9, ensemble=192);
-        :units = "";
+        :units = "ppm";
 
       double swvel(time=8783, ensemble=192);
-        :units = "";
+        :units = "km s-1";
 
       double swden(time=8783, ensemble=192);
-        :units = "";
+        :units = "cm-3";
 
       double f107(time_f107=365, ensemble=192);
-        :units = "";
+        :units = "sfu";
 
       double imfby(time=8783, ensemble=192);
-        :units = "";
+        :units = "nT";
 
       double imfbz(time=8783, ensemble=192);
-        :units = "";
+        :units = "nT";
 
       double imfbx(time=8783, ensemble=192);
-        :units = "";
+        :units = "nT";
 
     // group attributes:
-    :description = "ensemble perturbations";
+    :description = "ensemble of model input perturbations";
   }
+
   group: members {
     variables:
       double alfac(timeinvariant=1, ensemble=192);
@@ -219,29 +228,30 @@ netcdf file:perturbations_2026a_2024.nc {
         :units = "";
 
       double co2u(time_co2u=9, ensemble=192);
-        :units = "";
+        :units = "ppm";
 
       double swvel(time=8783, ensemble=192);
-        :units = "";
+        :units = "km s-1";
 
       double swden(time=8783, ensemble=192);
-        :units = "";
+        :units = "cm-3";
 
       double f107(time_f107=365, ensemble=192);
-        :units = "";
+        :units = "sfu";
 
       double imfby(time=8783, ensemble=192);
-        :units = "";
+        :units = "nT";
 
       double imfbz(time=8783, ensemble=192);
-        :units = "";
+        :units = "nT";
 
       double imfbx(time=8783, ensemble=192);
-        :units = "";
+        :units = "nT";
 
     // group attributes:
-    :description = "ensemble members";
+    :description = "ensemble of model inputs with applied perturbations";
   }
+
   group: mean {
     variables:
       double alfac(timeinvariant=1);
@@ -257,29 +267,30 @@ netcdf file:perturbations_2026a_2024.nc {
         :units = "";
 
       double co2u(time_co2u=9);
-        :units = "";
+        :units = "ppm";
 
       double swvel(time=8783);
-        :units = "";
+        :units = "km s-1";
 
       double swden(time=8783);
-        :units = "";
+        :units = "cm-3";
 
       double f107(time_f107=365);
-        :units = "";
+        :units = "sfu";
 
       double imfby(time=8783);
-        :units = "";
+        :units = "nT";
 
       double imfbz(time=8783);
-        :units = "";
+        :units = "nT";
 
       double imfbx(time=8783);
-        :units = "";
+        :units = "nT";
 
     // group attributes:
-    :description = "ensemble mean. In case the perturbations are normal distributet also the expectet value";
+    :description = "mean value of ensemble of model input perturbations";
   }
+
   group: std {
     variables:
       double alfac(timeinvariant=1);
@@ -295,35 +306,36 @@ netcdf file:perturbations_2026a_2024.nc {
         :units = "";
 
       double co2u(time_co2u=9);
-        :units = "";
+        :units = "ppm";
 
       double swvel(time=8783);
-        :units = "";
+        :units = "km s-1";
 
       double swden(time=8783);
-        :units = "";
+        :units = "cm-3";
 
       double f107(time_f107=365);
-        :units = "";
+        :units = "sfu";
 
       double imfby(time=8783);
-        :units = "";
+        :units = "nT";
 
       double imfbz(time=8783);
-        :units = "";
+        :units = "nT";
 
       double imfbx(time=8783);
-        :units = "";
+        :units = "nT";
 
     // group attributes:
-    :description = "ensemble standard deviation";
+    :description = "standard deviation of the ensemble of model input perturbations";
   }
 }
 ```
 
 </details>  
 
-An exemplary perturbation file is provided at https://doi.org/10.60507/FK2/QMNFKG (`perturbations_2026a_2024.nc`).
+* A toy perturbation file is included in this repository in `mwe`
+* An example of a perturbation file used for productive runs is provided at https://doi.org/10.60507/FK2/QMNFKG (`perturbations_2026a_2024.nc`).
 
 ### Observations
 
@@ -1094,6 +1106,8 @@ Section to assimilate data along a satellite's orbit.
   `"toleos_reduced"` some toleos files store data with reduced accuracy
 
   `'toleos_short'` some toleos files store data with less columns
+
+  `groops` https://www.tugraz.at/institute/ifg/downloads/satellite-orbit-products
 
   **Type**: string
 
