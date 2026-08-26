@@ -3664,6 +3664,182 @@
 
       end subroutine
 !-----------------------------------------------------------------------
+      subroutine mp_halo_exchanage_2d(field)
+
+      use mpi_f08
+
+      use fields_module, only:lond0,lond1,latd0,latd1
+
+      implicit none
+
+      ! arguments
+      real, intent(inout) :: field (lond0:lond1,latd0:latd1)
+
+      ! local
+      integer :: west, east, north, south
+      logical :: at_north_end, at_south_end
+      logical :: at_west_end, at_east_end
+
+      ! need buffers: https://www.mcs.anl.gov/research/projects/mpi/mpi-standard/mpi-report-2.0/node236.htm (Problems Due to Data Copying and Sequence Association)
+      real, dimension(:,:), allocatable ::
+     | recv_from_west, recv_from_east,
+     | send_to_west, send_to_east,
+     | recv_from_north, recv_from_south,
+     | send_to_north, send_to_south
+
+      integer :: nlon, nlat
+
+      integer :: buff_len
+      integer :: ier
+
+      TYPE(MPI_Request), dimension(4) :: east_west
+      TYPE(MPI_Request), dimension(4) :: south_north
+
+
+      west  = itask_table(mytidi-1,mytidj)
+      east  = itask_table(mytidi+1,mytidj)
+
+      if(west<0) west = itask_table(ntaski-1, mytidj)
+      if(east<0) east = itask_table(0, mytidj)
+
+      at_west_end = (mytidi == 0)
+      at_east_end = (mytidi == ntaski-1)
+
+      nlon = (lond1-lond0)+1
+      nlat = (latd1-latd0)+1
+
+      buff_len = 2*nlat
+
+      allocate (recv_from_west(2,nlat))
+      allocate (recv_from_east(2,nlat))
+      allocate (send_to_west(2,nlat))
+      allocate (send_to_east(2,nlat))
+
+      ! there are 'periodic' columns at west and east end plus additional halo cells
+      ! I have no idea why, but we have to deal with it
+      if(at_east_end)then
+        send_to_east = field((lond1-5):(lond1-4),:)
+      else
+        send_to_east = field((lond1-3):(lond1-2),:)
+      end if
+
+      if(at_west_end)then
+        send_to_west = field((lond0+4):(lond0+5),:)
+      else
+        send_to_west = field((lond0+2):(lond0+3),:)
+      end if
+
+      ! east to west recv
+      call mpi_irecv(recv_from_east, buff_len, MPI_REAL8,
+     |               east,1,TIEGCM_WORLD,east_west(1),ier)
+      if (ier /= 0) call handle_mpi_err(ier, 'recv from east')
+
+      ! west to east recv
+      call mpi_irecv(recv_from_west, buff_len, MPI_REAL8,
+     |               west,2,TIEGCM_WORLD,east_west(3),ier)
+      if (ier /= 0) call handle_mpi_err(ier, 'recv from west')
+
+      ! east to west send
+      call mpi_isend(send_to_west, buff_len, MPI_REAL8,
+     |               west,1,TIEGCM_WORLD,east_west(2),ier)
+      if (ier /= 0)  call handle_mpi_err(ier, 'send to west')
+
+      ! west to east send
+      call mpi_isend(send_to_east, buff_len, MPI_REAL8,
+     |               east,2,TIEGCM_WORLD,east_west(4),ier)
+      if (ier /= 0)  call handle_mpi_err(ier, 'send to east')
+
+      call mpi_waitall(4,east_west, MPI_STATUSES_IGNORE,ier)
+      if (ier /= 0)  call handle_mpi_err(ier, 'wait east west')
+
+
+      if(at_east_end)then
+        field((lond1-3):(lond1-2),:) = recv_from_east
+      else
+        field((lond1-1):lond1,:) = recv_from_east
+      end if
+
+      if(at_west_end)then
+        field((lond0+2):(lond0+3),:) = recv_from_west
+      else
+        field(lond0:(lond0+1),:) = recv_from_west
+      end if
+
+
+
+      buff_len = nlon*2
+      allocate (recv_from_north(nlon,2))
+      allocate (recv_from_south(nlon,2))
+      allocate (send_to_north(nlon,2))
+      allocate (send_to_south(nlon,2))
+
+      south = itask_table(mytidi,mytidj-1)
+      north = itask_table(mytidi,mytidj+1)
+
+      at_north_end = (mytidj == ntaskj-1)
+      at_south_end = (mytidj == 0)
+
+      send_to_north = field(:,latd1-3:latd1-2)
+      send_to_south = field(:,latd0+2:latd0+3)
+
+      ! south to north recv
+      if (at_south_end .eqv. .false.) then
+        call mpi_irecv(recv_from_south, buff_len, MPI_REAL8,
+     |                 south,1,TIEGCM_WORLD,south_north(1),ier)
+        if (ier /= 0) call handle_mpi_err(ier, 'recv from south')
+      else
+        south_north(1)=MPI_REQUEST_NULL
+      end if
+
+      ! north to south recv
+      if (at_north_end .eqv. .false.) then
+        call mpi_irecv(recv_from_north, buff_len, MPI_REAL8,
+     |                 north,2,TIEGCM_WORLD,south_north(3),ier)
+        if (ier /= 0)  call handle_mpi_err(ier, 'recv from north')
+      else
+        south_north(3)=MPI_REQUEST_NULL
+      end if
+
+      ! south to north send
+      if (at_north_end .eqv. .false.) then
+        call mpi_isend(send_to_north, buff_len, MPI_REAL8,
+     |                 north,1,TIEGCM_WORLD,south_north(2),ier)
+        if (ier /= 0)  call handle_mpi_err(ier, 'send to north')
+      else
+        south_north(2)=MPI_REQUEST_NULL
+      end if
+
+      ! north to south send
+      if (at_south_end .eqv. .false.) then
+        call mpi_isend(send_to_south, buff_len, MPI_REAL8,
+     |                 south,2,TIEGCM_WORLD,south_north(4),ier)
+        if (ier /= 0)  call handle_mpi_err(ier, 'send to south')
+      else
+        south_north(4)=MPI_REQUEST_NULL
+      end if
+
+      call mpi_waitall(4,south_north,
+     |                 MPI_STATUSES_IGNORE,ier)
+      if (ier /= 0)  call handle_mpi_err(ier, 'wait north south')
+
+      if (at_north_end .eqv. .false.) then
+        field(:,latd1-1:latd1) = recv_from_north
+      end if
+      if (at_south_end .eqv. .false.) then
+        field(:,latd0:latd0+1) = recv_from_south
+      end if
+
+      deallocate (recv_from_west)
+      deallocate (recv_from_east)
+      deallocate (send_to_west)
+      deallocate (send_to_east)
+      deallocate (recv_from_north)
+      deallocate (recv_from_south)
+      deallocate (send_to_north)
+      deallocate (send_to_south)
+
+      end subroutine
+!-----------------------------------------------------------------------
       subroutine mp_poles(field)
 
       use mpi_f08
@@ -3725,6 +3901,65 @@ c       use array_print_module, only: printMat
 
         field(:,:,latd1) = spread(mean,ncopies=nlon,dim=2)
         field(:,:,latd1-1) = spread(mean,ncopies=nlon,dim=2)
+      end if
+
+      end subroutine
+!-----------------------------------------------------------------------
+      subroutine mp_poles_2d(field)
+
+      use mpi_f08
+
+c       use array_print_module, only: printMat
+
+      use fields_module, only: lond0,lond1,latd0,latd1
+      use params_module, only: nlon_total => nlon
+
+      implicit none
+
+      ! arguments
+      real, intent(inout) :: field (lond0:lond1,latd0:latd1)
+
+      ! local
+      logical :: at_north_end, at_south_end, at_west_end, at_east_end
+
+      real :: sum_subdomain
+      real :: mean
+
+      integer :: lonX0, lonX1 ! without periodic cells, only with ghost cells
+
+      at_north_end = (mytidj == ntaskj-1)
+      at_south_end = (mytidj == 0)
+      at_west_end = (mytidi == 0)
+      at_east_end = (mytidi == ntaski-1)
+
+      ! annoying and unecessary periodic longitude cells in addition to ghost cell make this necessary
+      lonX0 = lond0
+      lonX1 = lond1
+      if (at_west_end) lonX0 = lonX0+2
+      if (at_east_end) lonX1 = lonX1-2
+
+      if(at_south_end) then
+        sum_subdomain = sum(field(lonX0+2:lonX1-2,latd0+2))
+        call MPI_AllReduce(sum_subdomain, mean, 1,
+     |                     MPI_REAL8,MPI_SUM,Comm_south)
+
+        mean=mean/nlon_total
+
+        field(:,latd0) = mean
+        field(:,latd0+1) = mean
+      end if
+
+      ! in case of only one PE per model, rank can contain both north and sout end
+      ! Thus we cannot use elseif here
+      if(at_north_end) then
+        sum_subdomain = sum(field(lonX0+2:lonX1-2,latd1-2))
+        call MPI_AllReduce(sum_subdomain, mean, 1,
+     |                     MPI_REAL8,MPI_SUM,Comm_north)
+
+        mean=mean/nlon_total
+
+        field(:,latd1) = mean
+        field(:,latd1-1) = mean
       end if
 
       end subroutine
