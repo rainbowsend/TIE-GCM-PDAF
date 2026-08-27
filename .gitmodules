@@ -12,5 +12,5 @@
 	branch = master
 [submodule "deps/geodetic-fortran-utilities"]
 	path = deps/geodetic-fortran-utilities
-	url = git@gitlab.igg.uni-bonn.de:s7arcorb/bspline.git
+	url = https://github.com/rainbowsend/geodetic-fortran-utilities.git
 	branch = main
