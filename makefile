@@ -138,7 +138,7 @@ BIND_SRC := 	trajectory_data.F90            model_parameters.F90 \
 		ensemble.F90                   optimized_interpolator.F90 \
 		field_bundle.F90               parser_mpi.F90 \
 		finalize_pdaf.F90              prepoststep_ens_pdaf.F90 \
-		g2l_state_pdaf.F90             print_parallel_info.F90 \
+		print_parallel_info.F90 \
 		georeferenced_data.F90 \
 		grid_observation.F90           quantity_computation.F90 \
 		init_dim_l_pdaf.F90            quantity_info.F90 \
@@ -148,7 +148,7 @@ BIND_SRC := 	trajectory_data.F90            model_parameters.F90 \
 		init_pdaf.F90                  set_pdaf_omi_domain_limits.F90 \
 		init_pdaf_info.F90             state.F90 \
 		init_pdaf_parse.F90            subdomain.F90 \
-		l2g_state_pdaf.F90             task_distribution.F90 \
+		task_distribution.F90 \
 		mapping.F90                    time.F90 \
 		mod_assimilation.F90           uset.F90 \
 		model_parameter_IO.F90
