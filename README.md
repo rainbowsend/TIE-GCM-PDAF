@@ -5,6 +5,9 @@ This fork includes modifications to combine TIE-GCM 3.0 with the [parallel data 
 > [!Tip]
 > If you just want to try TIE-GCM-PDAF hands-on, see the [minimal working example](mwe/README.md) in `mwe/`.
 
+> [!Tip]
+> An example of the outputs created by TIE-GCM-PDAF can be found at [bonndata](https://doi.org/10.60507/FK2/QMNFKG).
+
 # Main modifications
 <details>
   <summary>"fully parallel" PDAF integration</summary>
