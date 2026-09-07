@@ -1,25 +1,21 @@
-# settings and path to dependencies for computer with gcc
-
 FC = mpifort
-LD = $(FC)
-OPTIM = -g -O3 -march=native
+LD = ${FC}
+OPTIM = -O3 -ggdb -march=native
 
-FFLAGS = -fdefault-real-8
-# using these flags may slow down the program drastically
-#FFLAGS+= -ffpe-trap=invalid,zero,overflow
+FFLAGS = -fdefault-real-8  -fopenmp
 
-LIB_MPI = -L${EBROOTOPENMPI}/lib -lmpi
-INC_MPI = -I${EBROOTOPENMPI}/include/
+LIB_MPI = -lmpi
+INC_MPI =
 
-LIB_NETCDF = -L${EBROOTNETCDF}/lib -lnetcdf -L${EBROOTNETCDFMINFORTRAN}/lib -lnetcdff
-INC_NETCDF = -I${EBROOTNETCDF}/include -I${EBROOTNETCDFMINFORTRAN}/include
+LIB_NETCDF = -lnetcdf -lnetcdff
+INC_NETCDF =
 
-LIB_PDAF =
-INC_PDAF =
+LIB_PDAF = -Ldeps/pdaf/lib -lpdaf-d
+INC_PDAF = -Ideps/pdaf/include
 
-ESMF_DIR=./tiegcm/deps/esmf/lib/libO/Linux.gfortran.64.openmpi.default
+ESMF_DIR=deps/esmf/lib/libO/Linux.gfortran.64.openmpi.default
 LIB_ESMF= -L${ESMF_DIR} -lesmf
 include ${ESMF_DIR}/esmf.mk
 
-LIB_LAPACK  = -L${EBROOTOPENBLAS}/lib -lopenblas
+LIB_LAPACK  = -lopenblas
 LIBS += -lm -lcurl
