@@ -61,6 +61,7 @@ This fork includes modifications to combine TIE-GCM 3.0 with the [parallel data 
 You need
 * a compiler supporting Fortran 2018 features (e.g., GCC 11)
 * a MPI implementation supporting mpi_f08 interface (e.g., openMPI 4.1.4)
+* OpenMP
 * a LAPACK implementation (e.g., OpenBLAS-0.3.20)
 * NetCDF-fortran with nc4 support and parallel IO (requires HDF)
 
@@ -91,7 +92,7 @@ CXX:=g++
 OPTIM:=-O3 -g -march=native
 ```
 
-compile the library via `make`
+Compile the library via `make`.
 
 > [!TIP]
 > You can speed up the execution of `make` using the `-j` option, enabling parallel compilation. For example, `make -j 8` will compile up to 8 files in parallel.
@@ -100,6 +101,9 @@ compile the library via `make`
 Change the path to the root directory of this repository.
 
 First, you need to set the correct paths in `Make.hostname`. `hostname` is the name of the computer where you compile the program. Use the file `Make.gfortran` as a template.
+
+> [!NOTE]
+> Since the update to PDAF 3.1 TIE-GCM-PDAF has to be compiled with `-fopenmp` flag
 
 ### makefile options
 The make process is controlled by a few environment variables
