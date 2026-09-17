@@ -2335,7 +2335,8 @@
             islot(i) = pslot(i)
             pslot(i) = pslot(i)-float(islot(i))
 #ifdef USE_PDAF
-            if( islot(i) .lt. 1 .or. islot(i) .gt. 91 ) then
+            ! due to `table(islot(i)+1,2)` islot(i) must be < 90
+            if( islot(i) .lt. 1 .or. islot(i) .gt. 90 ) then
               call print_loc('FATAL ERROR islot(i) is out of bounds. '//
      |                       'Program is going to crash')
               if(zpotm3d(i,j,k) .lt. zpotm3d(i,j,mlev0)) then
