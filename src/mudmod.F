@@ -16,6 +16,13 @@
 !
 ! 07 JUL 2023: allocate 'work' array to fix  'moved from stack to static storage'
 ! 18 SEP 2025: merged with TIE-GCM 3.0
+! 17 SEP 2026: relmax was not checked for nan. An overflow in the line
+! relaxation back substitution (slxmd2cr/slymd2cr in mud.F, near-zero
+! pivot) turns it into Inf/Inf = NaN. A bare "relmax .gt. tolmax" test is
+! FALSE for a NaN, which would silently report convergence, leave
+! ierror = 0, and thereby skip the muh direct solver fallback in sub
+! solver (pdynamo.F) while a garbage potential is copied into pe.
+
 ! -----------------------------------------------------------------------------
 !----------------------------------------------------------------------------
 ! BOP
@@ -248,6 +255,7 @@ C-------------------------------------------------------------------
       real fparm,xa,xb,yc,yd,tolmax,relmax
       integer kpbgn,kcbgn,ktxbgn,ktybgn,nxk,nyk,isx,jsy
       integer int,iw,k,kb,nx,ny,ic,itx,ity
+      logical converged
       dimension iparm(17),fparm(6),mgopt(4)
       real work(*),phi(*),rhs(*)
       common/imud2cr/intl,nxa,nxb,nyc,nyd,ixp,jyq,iex,jey,nfx,nfy,
@@ -396,18 +404,23 @@ c
       iparm(17) = itero
       if (tolmax.gt.0.0) then   ! check for convergence
 	fparm(6) = relmax
-	if (relmax.gt.tolmax) then
+!
+	converged = .false.
+	if (.not.isnan(relmax)) converged = relmax.le.tolmax
+	if (.not.converged) then
 	
 !	   ierror = -1   ! flag convergenc failure
-	   write(6,*) "no convergence with mudmod"
+	   write(6,*) "no convergence with mudmod. relmax=",relmax
 !         
            iguess = 1 
            iparm(12)= iguess                           	   
            call mud2cr1(nx,ny,rhs,phi,work) !  solve with modified stencils
 	   
 	   fparm(6) = relmax
-	   if (relmax.gt.tolmax) then
-	     write(6,*) "no convergence with mud"
+	   converged = .false.
+	   if (.not.isnan(relmax)) converged = relmax.le.tolmax
+	   if (.not.converged) then
+	     write(6,*) "no convergence with mud. relmax=",relmax
 	     ierror = -1   ! flag convergenc failure
 	   end if
 	   
