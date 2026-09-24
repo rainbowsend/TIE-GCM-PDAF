@@ -501,16 +501,6 @@ List of state variables that are included in the result file. The state variable
 
   **Example**: `OUTPUT%SAVE_MEMBERS=.true.`
 
-### OUTPUT%SAVE_UNCONSTRAINED_ANALYSIS [expert]
-
-  Write the results of the analysis step before applying the constraints. The constrained quantities are written regardless of this option.
-
-  **Type**: logical
-
-  **Default**: `.false.`
-
-  **Example**: `OUTPUT%SAVE_UNCONSTRAINED_ANALYSIS=.true.`
-
 ### OUTPUT%SYNC_EVERY
   Syncing the nc files is a costly operation. This parameter controls how many time steps after a writing operation the file is synced. If the model crashes before the data is synchronized, it is lost.
 
@@ -596,6 +586,36 @@ List of state variables that are included in the result file. The state variable
   **Default**: `.true.`
 
   **Example**: `OUTPUT%LOCK_NC_TIME=.true.`
+
+### OUTPUT%SAVE_UNCONSTRAINED_ANALYSIS [expert]
+
+  Write the results of the analysis step before applying the constraints. The constrained quantities are written regardless of this option.
+
+  **Type**: logical
+
+  **Default**: `.false.`
+
+  **Example**: `OUTPUT%SAVE_UNCONSTRAINED_ANALYSIS=.true.`
+
+### OUTPUT%SAVE_N_STEPS_AFTER_UPDATE [expert]
+
+  Write the n subsequent model steps after each analysis step. This option is intended for debugging not for production runs.
+
+  **Type**: integer
+
+  **Default**: `0`
+
+  **Example**: `OUTPUT%SAVE_N_STEPS_AFTER_UPDATE=5`
+
+### OUTPUT%ENFORCE_SYNC_AFTER_UPDATE [expert]
+
+  Force syncronization of result file after each analysis step. This option is intended for debugging not for production runs.
+
+  **Type**: logical
+
+  **Default**: `.false.`
+
+  **Example**: `OUTPUT%ENFORCE_SYNC_AFTER_UPDATE=.true.`
 
 ## calibration
 
