@@ -617,6 +617,36 @@ List of state variables that are included in the result file. The state variable
 
   **Example**: `OUTPUT%ENFORCE_SYNC_AFTER_UPDATE=.true.`
 
+### OUTPUT%DEBUG [expert]
+
+  Convenience switch that enables the full diagnostic output needed to investigate a crash or an unexpected analysis increment.
+
+  Every option that is actually changed is reported on stdout, so the effective configuration remains visible in the log. Options are only ever switched on, never off.
+
+| option | set to |
+| ------ | ------ |
+| [`OUTPUT%SAVE_OBS`](#outputsave_obs) | `.true.` |
+| [`OUTPUT%SAVE_STATE`](#outputsave_state) | `.true.` |
+| [`OUTPUT%SAVE_STATE_NM`](#outputsave_state_nm) | `.true.` |
+| [`OUTPUT%SAVE_MEMBERS`](#outputsave_members) | `.true.` |
+| [`OUTPUT%FORCE_WRITE_ON_UPDATE`](#outputforce_write_on_update) | `.true.` |
+| [`OUTPUT%SAVE_UNCONSTRAINED_ANALYSIS`](#outputsave_unconstrained_analysis-expert) | `.true.` |
+| [`OUTPUT%SAVE_N_STEPS_AFTER_UPDATE`](#outputsave_n_steps_after_update-expert) | at least `5` |
+| [`OUTPUT%ENFORCE_SYNC_AFTER_UPDATE`](#outputenforce_sync_after_update-expert) | `.true.` |
+| [`OUTPUT%SYNC_EVERY`](#outputsync_every) | `1` |
+| [`LOGGER%VERBOSE_LEVEL`](#loggerverbose_level) | at least `1` |
+
+  [`OUTPUT%SAVE_N_STEPS_AFTER_UPDATE`](#outputsave_n_steps_after_update-expert) and [`LOGGER%VERBOSE_LEVEL`](#loggerverbose_level) are only raised if they are currently smaller, so a larger explicit value is preserved. [`OUTPUT%SYNC_EVERY`](#outputsync_every) is the exception: it is always set to `1`, since for this option a smaller value means more diagnostic safety, not less.
+
+> [!Warning]
+> Intended for debugging only, never for production runs. The impact on runtime and disk usage is severe: every ensemble member is written, the state vector is written for the current and previous time step, and five additional model steps are written after every analysis step. This option removes the throttling of file syncronization entirely.
+
+  **Type**: logical
+
+  **Default**: `.false.`
+
+  **Example**: `OUTPUT%DEBUG=.true.`
+
 ## calibration
 
 ### CALIBRATION%APPLY
