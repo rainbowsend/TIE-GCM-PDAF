@@ -857,6 +857,9 @@
       use my_esmf,only: ESMF_Finalize,ESMF_END_KEEPMPI,ESMF_SUCCESS
       use mpi_f08
       use mpi_module,only: mytid
+#ifdef USE_PDAF
+      use nc_debug,only: panic_write
+#endif
 !
 ! An fatal error has occurred -- shut down the model, including MPI.
 !
@@ -873,6 +876,15 @@
       write(6,"(a,I3,a)"), 'rank <',mytid ,'>' 
       CALL BACKTRACE
       write(6,"('Shutdown: stop message: ',a)") trim(msg)
+!
+#ifdef USE_PDAF
+! Dump this rank's model state, so the crash can be diagnosed from the fields
+! panic_write is deliberately rank local and uses no MPI: shutdown
+! is in general reached by only a subset of the ranks - not even
+! necessarily all ranks of one ensemble member - so any collective writer would
+! deadlock here instead of producing output.
+      call panic_write
+#endif
 !
 ! ESMF is nested inside MPI, so shutdown ESMF first:
       call ESMF_Finalize(endflag=ESMF_END_KEEPMPI,rc=ier)

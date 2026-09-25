@@ -72,7 +72,8 @@
 #ifdef USE_PDAF
       use array_print_module, only: printMat
       use configuration, only: cfg_output
-      use nc_debug, only: instant_write, advance_nc_debug
+      use nc_debug, only: instant_write, advance_nc_debug,
+     | panic_is_enabled
       use result_writer_frontend, only: compute_and_write_results
       use model_parameter_handling_module, only:
      | write_parmeter_handling, update_model_parameters
@@ -246,6 +247,9 @@
      |    f12.2,' Advance: step ',i5)") time1_init,istep
 
       call cpu_time(ref_time)
+#ifdef USE_PDAF
+      panic_is_enabled=.true.
+#endif
 !
 ! Main time loop:
   100 continue
