@@ -8,8 +8,8 @@
 	branch = release/8.7.0
 [submodule "deps/pdaf-binding-tiegcm"]
 	path = deps/pdaf-binding-tiegcm
-	url = git@gitlab.igg.uni-bonn.de:apmg/pdaf-binding-tiegcm.git
-	branch = master
+	url = https://github.com/rainbowsend/pdaf-binding-tiegcm.git
+	branch = main
 [submodule "deps/geodetic-fortran-utilities"]
 	path = deps/geodetic-fortran-utilities
 	url = https://github.com/rainbowsend/geodetic-fortran-utilities.git
