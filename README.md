@@ -84,20 +84,15 @@ Follow the [installation instructions](https://earthsystemmodeling.org/docs/rele
 Follow the [installation instructions](https://pdaf.awi.de/trac/wiki/CompilingPdaf)
 
 ### geodetic-fortran-utilities
-`cd deps/geodetic-fortran-utilities`
 
-First, you need to set the correct paths in `Make.hostname`. `hostname` is the name of the computer where you compile the program. Use the file `Make.gfortran` as a template.
-Here, you have to set only three variables, e.g.,
-``` bash
-FC:=gfortran
-CXX:=g++
-OPTIM:=-O3 -g -march=native
+Follow the [installation instructions](https://github.com/rainbowsend/geodetic-fortran-utilities). The short version is
+
+```bash
+cd deps/geodetic-fortran-utilities/deps
+./get_deps.sh
+cd ..
+make
 ```
-
-Compile the library via `make`.
-
-> [!TIP]
-> You can speed up the execution of `make` using the `-j` option, enabling parallel compilation. For example, `make -j 8` will compile up to 8 files in parallel.
 
 ## Install TIE-GCM
 Change the path to the root directory of this repository.
@@ -121,6 +116,9 @@ Try first to install TIE-GCM without PDAF binding and using the lowest resolutio
 ```
 WITH_PDAF=FALSE EXE_NAME=tiegcm5.0 BUILD_DIR=build/tiegcm5.0 TGCM_RES=LOW make
 ```
+
+> [!TIP]
+> You can speed up the execution of `make` using the `-j` option, enabling parallel compilation. For example, `make -j 8` will compile up to 8 files in parallel.
 
 If no error occurs, install TIE-GCM with PDAF binding
 
