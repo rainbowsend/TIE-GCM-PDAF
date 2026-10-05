@@ -1,7 +1,8 @@
 # TIE-GCM-PDAF Minimal Working Example
 
 This is a small, self-contained example for running TIE-GCM-PDAF. Run it with
-`./run.sh`.
+`./run.sh`. In this example, mass densities along the orbit of the CHAMP satellite
+are assimilated (`data/champ_denswind_v3_4_2010-04.nc`).
 
 ## Limitations
 
@@ -40,9 +41,6 @@ The actual assimilation run, from **2 April 2010, 00:00 UT to 3 April 2010,
 2 April 2010, 00:00 UT as its initial state. Produces:
 
 * `assimilation.nc` -- the assimilation system's own result file
-
-Both stages assimilate CHAMP mass density observations from
-`data/champ_denswind_v3_4_2010-04.nc`.
 
 ## Plotting
 
