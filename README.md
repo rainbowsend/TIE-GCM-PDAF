@@ -94,7 +94,7 @@ cd ..
 make
 ```
 ### pdaf-binding-tiegcm
-[pdaf-binding-tiegcm](https://github.com/rainbowsend/pdaf-binding-tiegcm/) contains the source code for integrating PFAF into TIE-GCM. The Makefile of TIE-GCM-PDAF builds the source code provided in pdaf-binding-tiegcm. Thus, this submodule does not require installation.
+[pdaf-binding-tiegcm](https://github.com/rainbowsend/pdaf-binding-tiegcm/) contains the source code for integrating PDAF into TIE-GCM. The Makefile of TIE-GCM-PDAF builds the source code provided in pdaf-binding-tiegcm. Thus, this submodule does not require installation.
 
 
 ## Install TIE-GCM
@@ -1227,6 +1227,189 @@ Section to assimilate data along a satellite's orbit.
   **Default**: `.true.`
 
   **Example**: `OBSERVATION%SATELLITE(1)%FORCE_WRITE_ON_UPDATE=.false.`
+
+### OBSERVATION%CAL_DEN()
+
+Section to assimilate (calibrated) gridded neutral mass densities, e.g. form an semi-empirical model
+
+#### OBSERVATION%CAL_DEN()%APPLY
+  assimilate this observation
+
+  **Type**: logical
+
+  **Default**: `.false.`
+
+  **Example**: `OBSERVATION%CAL_DEN(1)%APPLY=.true.`
+
+#### OBSERVATION%CAL_DEN()%ALWAYS_SAVE
+  interpolate the model grid to the location of the observation and save it to the result file, even when it is not assimilated. Useful for open-loop simulations.
+
+  **Type**: logical
+
+  **Default**: `.false.`
+
+  **Example**: `OBSERVATION%CAL_DEN(1)%ALWAYS_SAVE=.true.`
+  
+#### OBSERVATION%CAL_DEN()%tme_grid_file
+  path to the NetCDF file containing the calibrated mass densities on a regular grid
+
+  **Type**: string
+
+  **Default**: `''`
+
+  **Example**: `OBSERVATION%CAL_DEN(1)%tme_grid_file="./file.nc"`
+
+#### OBSERVATION%CAL_DEN()%fields
+  Name of the fields in the NetCDF file that should be assimilated
+
+  **Type**: string
+
+  **Default**: `''`
+
+  **Example**: `OBSERVATION%CAL_DEN(1)%fields="DEN"`
+
+#### OBSERVATION%CAL_DEN()%NAME
+  name used to save the data in the result file.
+
+  **Type**: string
+
+  **Default**: `''`
+
+  **Example**: `OBSERVATION%CAL_DEN(1)%NAME="cal_msis_champ"`
+
+#### OBSERVATION%CAL_DEN()%SATELLITE
+  Name of the Satellite used for calibration
+
+  **Type**: string
+
+  **Default**: `''`
+
+  **Example**: `OBSERVATION%CAL_DEN(1)%SATELLITE="champ"`
+
+#### OBSERVATION%CAL_DEN()%WEIGHT
+  Currently, it is assumed that the uncertainty is 10% of the value itself. The standard deviation is divided by the weight factor.
+
+  **Type**: real
+
+  **Default**: `1.0`
+
+  **Example**: `OBSERVATION%CAL_DEN(1)WEIGHT=1.0`
+
+#### OBSERVATION%CAL_DEN()%horz_weight_half_life
+  If > 0, weights observations by distance to the satellite used for calibration. Weights are computed from an exponential function that halves every `horz_weight_half_life`.
+  Half-life is provided in degrees.
+
+  **Type**: real
+
+  **Default**: `.0`
+
+  **Example**: `OBSERVATION%CAL_DEN(1)horz_weight_half_life=30`
+  
+#### OBSERVATION%CAL_DEN()%vert_weight_half_life
+  If > 0, weights observations by distance to the satellite used for calibration. Weights are computed from an exponential function that halves every `vert_weight_half_life`.
+  Half-life is provided in km.
+
+  **Type**: real
+
+  **Default**: `.0`
+
+  **Example**: `OBSERVATION%CAL_DEN(1)vert_weight_half_life=600`
+
+#### OBSERVATION%CAL_DEN()%correlations [experimental]
+  `exp` or `none`. Treats observations as correlated and uses an exponential to fill the off-diagonals of the correlation matrix. Decay is currently hard-coded.
+  **Type**: string
+
+  **Default**: `none`
+
+  **Example**: `OBSERVATION%CAL_DEN(1)correlations='exp'`
+
+#### OBSERVATION%CAL_DEN()%WRITE_EVERY_SEC
+  Determines how frequently data at the location of the observation is written. The duration in seconds is converted to the number of model steps.
+  If negative, every time step is saved (not recommended).
+
+  **Type**: integer
+
+  **Default**: `-1`
+
+  **Example**: `OBSERVATION%CAL_DEN(1)%WRITE_EVERY_SEC=600`
+
+#### OBSERVATION%CAL_DEN()%FORCE_WRITE_ON_UPDATE
+  Write every analysis regardless of writing frequency determined in `OBSERVATION%CAL_DEN(1)%WRITE_EVERY_SEC`
+
+  **Type**: logical
+
+  **Default**: `.true.`
+
+  **Example**: `OBSERVATION%CAL_DEN(1)%FORCE_WRITE_ON_UPDATE=.false.`
+
+### OBSERVATION%TUM_NE()
+
+Section to assimilate 3D electron densities
+
+#### OBSERVATION%TUM_NE%APPLY
+  assimilate this observation
+
+  **Type**: logical
+
+  **Default**: `.false.`
+
+  **Example**: `OBSERVATION%TUM_NE%APPLY=.true.`
+
+#### OBSERVATION%TUM_NE%ALWAYS_SAVE
+  interpolate the model grid to the location of the observation and save it to the result file, even when it is not assimilated. Useful for open-loop simulations.
+
+  **Type**: logical
+
+  **Default**: `.false.`
+
+  **Example**: `OBSERVATION%TUM_NE%ALWAYS_SAVE=.true.`
+  
+#### OBSERVATION%TUM_NE%tme_grid_file
+  path to the NetCDF file containing the 3D electron densities
+
+  **Type**: string
+
+  **Default**: `''`
+
+  **Example**: `OBSERVATION%TUM_NE%tme_grid_file="./file.nc"`
+
+#### OBSERVATION%TUM_NE%NAME
+  name used to save the data in the result file.
+
+  **Type**: string
+
+  **Default**: `''`
+
+  **Example**: `OBSERVATION%TUM_NE%NAME="tumne"`
+
+#### OBSERVATION%TUM_NE%WEIGHT
+  Currently, it is assumed that the uncertainty is 10% of the value itself. The standard deviation is divided by the weight factor.
+
+  **Type**: real
+
+  **Default**: `1.0`
+
+  **Example**: `OBSERVATION%TUM_NE%WEIGHT=1.0`
+
+#### OBSERVATION%TUM_NE%WRITE_EVERY_SEC
+  Determines how frequently data at the location of the observation is written. The duration in seconds is converted to the number of model steps.
+  If negative, every time step is saved (not recommended).
+
+  **Type**: integer
+
+  **Default**: `-1`
+
+  **Example**: `OBSERVATION%TUM_NE%WRITE_EVERY_SEC=600`
+
+#### OBSERVATION%TUM_NE%FORCE_WRITE_ON_UPDATE
+  Write every analysis regardless of writing frequency determined in `OBSERVATION%TUM_NE%WRITE_EVERY_SEC`
+
+  **Type**: logical
+
+  **Default**: `.true.`
+
+  **Example**: `OBSERVATION%TUM_NE%FORCE_WRITE_ON_UPDATE=.false.`
+
 
 ## logger
 
