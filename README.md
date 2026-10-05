@@ -1,4 +1,6 @@
-# TIE-GCM-PDAF
+# TIE-GCM PDAF
+
+[![DOI](https://zenodo.org/badge/DOI/110.5281/zenodo.23102803.svg)](https://doi.org/10.5281/zenodo.23102803)
 
 This NCAR HAO TIE-GCM fork was created at the Institute for Geodesy and Geoinformation (University of Bonn) by the [Group of Astronomical, Physical, and Mathematical Geodesy (APMG)](https://www.igg.uni-bonn.de/apmg/de).
 
@@ -381,6 +383,13 @@ with
 > [!Note]
 At 2.5-deg resolution, it is not recommended to use more than 8 cores per model instance, as the speed-up is low above this number.
 
+# Citation
+When using this software, please cite
+* this [fork](https://doi.org/10.5281/zenodo.23102803),
+* the [PDAF Binding for TIE-GCM](https://doi.org/10.5281/zenodo.23103186),
+* the [original TIE-GCM](https://doi.org/10.5281/zenodo.20076374),
+* its [associated paper](https://doi.org/10.1029/2025JA034219),
+* and [PDAF](https://doi.org/10.5281/zenodo.7861812).
 
 # Configuration
 
