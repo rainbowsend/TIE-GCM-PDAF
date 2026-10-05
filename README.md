@@ -93,6 +93,9 @@ cd deps/geodetic-fortran-utilities/deps
 cd ..
 make
 ```
+### pdaf-binding-tiegcm
+[pdaf-binding-tiegcm](https://github.com/rainbowsend/pdaf-binding-tiegcm/) contains the source code for integrating PFAF into TIE-GCM. The Makefile of TIE-GCM-PDAF builds the source code provided in pdaf-binding-tiegcm. Thus, this submodule does not require installation.
+
 
 ## Install TIE-GCM
 Change the path to the root directory of this repository.
@@ -100,7 +103,7 @@ Change the path to the root directory of this repository.
 First, you need to set the correct paths in `Make.hostname`. `hostname` is the name of the computer where you compile the program. Use the file `Make.gfortran` as a template.
 
 > [!NOTE]
-> Since the update to PDAF 3.1 TIE-GCM-PDAF has to be compiled with `-fopenmp` flag
+> When using PDAF >= 3.1, TIE-GCM-PDAF has to be compiled with `-fopenmp` flag
 
 ### makefile options
 The make process is controlled by a few environment variables
