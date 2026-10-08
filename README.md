@@ -1,16 +1,25 @@
 # TIE-GCM PDAF
 
-[![DOI](https://zenodo.org/badge/DOI/110.5281/zenodo.23102803.svg)](https://doi.org/10.5281/zenodo.23102803)
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.23102802.svg)](https://doi.org/10.5281/zenodo.23102802)
 
-This NCAR HAO TIE-GCM fork was created at the Institute for Geodesy and Geoinformation (University of Bonn) by the [Group of Astronomical, Physical, and Mathematical Geodesy (APMG)](https://www.igg.uni-bonn.de/apmg/de).
+**An ensemble data assimilation system for the upper atmosphere (thermosphere and ionosphere).**
+TIE-GCM PDAF combines the Thermosphere-Ionosphere-Electrodynamics General Circulation Model (TIE-GCM) with ensemble-based Kalman filters from the [Parallel Data Assimilation Framework (PDAF)](https://pdaf.awi.de/trac/wiki). It supports assimilation of satellite observations, such as accelerometer-derived mass densities; gridded observations (for example, from empirical models); and integrated observations such as VTEC. Adding new observation types to the existing code is straightforward.
 
-This fork includes modifications to combine TIE-GCM 3.0 with the [parallel data assimilation framework (PDAF)](https://pdaf.awi.de/trac/wiki).
-
-> [!Tip]
-> If you just want to try TIE-GCM-PDAF hands-on, see the [minimal working example](mwe/README.md) in `mwe/`.
+This fork of NCAR HAO's TIE-GCM 3.0 was developed at the Institute for Geodesy and Geoinformation (University of Bonn) by the [Group of Astronomical, Physical, and Mathematical Geodesy (APMG)](https://www.igg.uni-bonn.de/apmg/de). Use is governed by the [NCAR TIE-GCM open source academic research license agreement](./LICENSE).
 
 > [!Tip]
-> An example of the outputs created by TIE-GCM-PDAF can be found at [bonndata](https://doi.org/10.60507/FK2/QMNFKG).
+> If you just want to try TIE-GCM PDAF hands-on, see the [minimal working example](mwe/README.md) in `mwe/`.
+
+> [!Tip]
+> An example of the outputs created by TIE-GCM PDAF can be found at [bonndata](https://doi.org/10.60507/FK2/QMNFKG).
+
+# Citation
+When using this software, please cite
+* this [fork](https://doi.org/10.5281/zenodo.23102802),
+* the [PDAF Binding for TIE-GCM](https://doi.org/10.5281/zenodo.23103186),
+* the [original TIE-GCM](https://doi.org/10.5281/zenodo.20076374),
+* its [associated paper](https://doi.org/10.1029/2025JA034219),
+* and [PDAF](https://doi.org/10.5281/zenodo.7861812).
 
 # Main modifications
 <details>
@@ -64,7 +73,7 @@ This fork includes modifications to combine TIE-GCM 3.0 with the [parallel data 
 
 You need
 * a compiler supporting Fortran 2018 features (e.g., GCC 11)
-* a MPI implementation supporting mpi_f08 interface (e.g., openMPI 4.1.4)
+* an MPI implementation supporting mpi_f08 interface (e.g., openMPI 4.1.4)
 * OpenMP
 * a LAPACK implementation (e.g., OpenBLAS-0.3.20)
 * NetCDF-fortran with nc4 support and parallel IO (requires HDF)
@@ -73,11 +82,11 @@ You need
 > This software has been tested and developed with **gfortran** (gcc) only. Other compilers may fail to compile it.
 
 > [!Note]
-> The model error is represented by an ensemble of TIE-GCM~3.0 instances. All instances are computed in parallel. A typical ensemble size is 72, which accordingly requires 72 cores. To exploit the parallelization of the TIE-GCM, even more cores are required. For example, 288 cores would be required to compute 72 instances, each running on 4 cores.
+> The model error is represented by an ensemble of TIE-GCM 3.0 instances. All instances are computed in parallel. A typical ensemble size is 72, which accordingly requires 72 cores. To exploit the parallelization of the TIE-GCM, even more cores are required. For example, 288 cores would be required to compute 72 instances, each running on 4 cores.
 
 ## Install submodules
 
-pull dependencies, e.g., using `git submodule update --init`
+Pull dependencies, e.g., using `git submodule update --init`
 
 ### esmf
 Follow the [installation instructions](https://earthsystemmodeling.org/docs/release/latest/ESMF_usrdoc/node10.html)
@@ -96,30 +105,30 @@ cd ..
 make
 ```
 ### pdaf-binding-tiegcm
-[pdaf-binding-tiegcm](https://github.com/rainbowsend/pdaf-binding-tiegcm/) contains the source code for integrating PDAF into TIE-GCM. The Makefile of TIE-GCM-PDAF builds the source code provided in pdaf-binding-tiegcm. Thus, this submodule does not require installation.
+[pdaf-binding-tiegcm](https://github.com/rainbowsend/pdaf-binding-tiegcm/) contains the source code for integrating PDAF into TIE-GCM. The Makefile of TIE-GCM PDAF builds the source code provided in pdaf-binding-tiegcm. Thus, this submodule does not require installation.
 
 
 ## Install TIE-GCM
-Change the path to the root directory of this repository.
+Change to the root directory of this repository.
 
 First, you need to set the correct paths in `Make.hostname`. `hostname` is the name of the computer where you compile the program. Use the file `Make.gfortran` as a template.
 
 > [!NOTE]
-> When using PDAF >= 3.1, TIE-GCM-PDAF has to be compiled with `-fopenmp` flag
+> When using PDAF >= 3.1, TIE-GCM PDAF has to be compiled with `-fopenmp` flag
 
 ### makefile options
 The make process is controlled by a few environment variables
-| variable  | default | description                                               |
-| --------- | ------- | ----------------------------------------------------------|
-| WITH_PDAF | TRUE    | if true compile TIE-GCM with PDAF coupling                |
-| EXE_NAME  | tiegcm  | controls the name of the executable                       |
-| BUILD_DIR | build   | controls the location of build directory                  |
-| HIGH_RES  | FALSE   | If true use 2.5° instead of 5.0° horizontal resolution    |
-| ALT_EXT   | FALSE   | if true use altitude extension                            |
+| variable  | default      | description                                               |
+| --------- | ------------ | ----------------------------------------------------------|
+| WITH_PDAF | TRUE         | if true compile TIE-GCM with PDAF coupling                |
+| EXE_NAME  | tiegcm-pdaf  | controls the name of the executable                       |
+| BUILD_DIR | build        | controls the location of build directory                  |
+| HIGH_RES  | FALSE        | If true use 2.5° instead of 5.0° horizontal resolution    |
+| ALT_EXT   | FALSE        | if true use altitude extension                            |
 
 Try first to install TIE-GCM without PDAF binding and using the lowest resolution
 ```
-WITH_PDAF=FALSE EXE_NAME=tiegcm5.0 BUILD_DIR=build/tiegcm5.0 TGCM_RES=LOW make
+WITH_PDAF=FALSE EXE_NAME=tiegcm5.0 BUILD_DIR=build/tiegcm5.0 HIGH_RES=FALSE make
 ```
 
 > [!TIP]
@@ -128,8 +137,7 @@ WITH_PDAF=FALSE EXE_NAME=tiegcm5.0 BUILD_DIR=build/tiegcm5.0 TGCM_RES=LOW make
 If no error occurs, install TIE-GCM with PDAF binding
 
 ```
-rm -rf Depends
-WITH_PDAF=TRUE EXE_NAME=tiegcm5.0-pdaf BUILD_DIR=build/tiegcm5.0-pdaf TGCM_RES=LOW make
+WITH_PDAF=TRUE EXE_NAME=tiegcm5.0-pdaf BUILD_DIR=build/tiegcm5.0-pdaf HIGH_RES=FALSE make
 ```
 # Data
 
@@ -364,7 +372,7 @@ netcdf file:perturbations_2026a_2024.nc {
 
 # Running
 
-The executable takes two positional arguments: the [namelist file](https://www.hao.ucar.edu/modeling/tgcm/tiegcm2.0/userguide/html/namelist.html#example-namelist-input-files) file containing the TIE-GCM configuration and the name list file containing the assimilation system configuration (explained below in section [Configuration](#Configuration)).
+The executable takes two positional arguments: the [namelist file](https://www.hao.ucar.edu/modeling/tgcm/tiegcm2.0/userguide/html/namelist.html#example-namelist-input-files) containing the TIE-GCM configuration and the namelist file containing the assimilation system configuration (explained below in section [Configuration](#configuration)).
 
 To execute the assimilation system, use
 
@@ -374,30 +382,22 @@ mpirun -np ${npes} bin/tiegcm5.0-pdaf ${tiegcm_nml} ${pdaf_nml}
 with
 
 *  the number of physical cores `${npes}`, 
-*  the path to the TIE-GCM namlist file `${tiegcm_nml}`,
-*  and the path to the assimilation system namlist file `${pdaf_nml}`
+*  the path to the TIE-GCM namelist file `${tiegcm_nml}`,
+*  and the path to the assimilation system namelist file `${pdaf_nml}`
 
 > [!Tip]
 > Use the mpirun option `--output-filename ./out --merge-stderr-to-stdout` to write the output of each rank into a different file. This makes reading the log much easier.
 
 > [!Note]
-At 2.5-deg resolution, it is not recommended to use more than 8 cores per model instance, as the speed-up is low above this number.
-
-# Citation
-When using this software, please cite
-* this [fork](https://doi.org/10.5281/zenodo.23102803),
-* the [PDAF Binding for TIE-GCM](https://doi.org/10.5281/zenodo.23103186),
-* the [original TIE-GCM](https://doi.org/10.5281/zenodo.20076374),
-* its [associated paper](https://doi.org/10.1029/2025JA034219),
-* and [PDAF](https://doi.org/10.5281/zenodo.7861812).
+> At 2.5-deg resolution, it is not recommended to use more than 8 cores per model instance, as the speed-up is low above this number.
 
 # Configuration
 
-TIEGCM settings are controlled by a [namelist file](https://www.hao.ucar.edu/modeling/tgcm/tiegcm2.0/userguide/html/namelist.html#example-namelist-input-files). The path to this file is the first argument to the executable. When using TIE-GCM-PDAF, the executable takes a second argument: the path to another namelist file that controls the assimilation setup. The namelist parameters are explained in the following:
+TIE-GCM settings are controlled by a [namelist file](https://www.hao.ucar.edu/modeling/tgcm/tiegcm2.0/userguide/html/namelist.html#example-namelist-input-files). The path to this file is the first argument to the executable. When using TIE-GCM PDAF, the executable takes a second argument: the path to another namelist file that controls the assimilation setup. The namelist parameters are explained in the following:
 
 ## Output
 
-In addition to the history files, TIE-GCM-PDAF has its own writer, which is controlled by this group.
+In addition to the history files, TIE-GCM PDAF has its own writer, which is controlled by this group.
 
 ### OUTPUT%RESULT_FILE_NAME_TAG
   Name of the NetCDF file(s). ".nc" is added automatically.
@@ -549,7 +549,7 @@ List of state variables that are included in the result file. The state variable
   **Example**: `OUTPUT%MAX_MOMENT=3`
 
 ### OUTPUT%SUPRESS_TIEGCM_OUTPUT
-  This option suppresses the generation of TIEGCM intern history files.
+  This option suppresses the generation of TIE-GCM internal history files.
 
   **Type**: logical
 
@@ -558,7 +558,7 @@ List of state variables that are included in the result file. The state variable
   **Example**: `OUTPUT%SUPRESS_TIEGCM_OUTPUT=.true.`
 
 > [!Warning]
-> You cannot restart the model without the TIEGCM intern files
+> You cannot restart the model without the TIE-GCM internal files
 
 ### OUTPUT%USE_DOUBLE_PRECISION
   If true, use 8-byte floating-point numbers; else, use 4-byte floating-point numbers.
@@ -1041,15 +1041,6 @@ Controls the composition of the state vector
 
   **Example**: `STATE%MOLECULAR_OXYGEN_ION_DENSITY=.true.`
 
-### STATE%MERIDIONAL_WIND
-  Add meridional wind velocity to the state vector
-
-  **Type**: logical
-
-  **Default**: `.false.`
-
-  **Example**: `STATE%MERIDIONAL_WIND=.true.`
-
 ### STATE%ATOMIC_ARGON
   Add mass fraction of atomic argon to the state vector
 
@@ -1118,7 +1109,7 @@ Controls the composition of the state vector
 
 ### ENSEMBLE%OVERWRITE_SOURCE
 
-  If disabled, the initial state is initialized according to the TIEGCM input file. When enabled, the state of each member is initialized according to `ENSEMBLE%SOURCE_PATH` and `ENSEMBLE%SOURCE_NAME`.
+  If disabled, the initial state is initialized according to the TIE-GCM input file. When enabled, the state of each member is initialized according to `ENSEMBLE%SOURCE_PATH` and `ENSEMBLE%SOURCE_NAME`.
 
   **Type**: logical
 
@@ -1128,7 +1119,7 @@ Controls the composition of the state vector
 
 ### ENSEMBLE%SOURCE_PATH
 
-  Path to the directory containing a TIEGCM primary history file for each member. The files have to start with `ens_xxxx_`, where xxxx is the index of the ensemble member, padded with leading zeros. The files can be created by conducting an open-loop simulation. The assimilation system will then automatically generate the history files with the correct naming schema.
+  Path to the directory containing a TIE-GCM primary history file for each member. The files have to start with `ens_xxxx_`, where xxxx is the index of the ensemble member, padded with leading zeros. The files can be created by conducting an open-loop simulation. The assimilation system will then automatically generate the history files with the correct naming schema.
 
   **Type**: string
 
