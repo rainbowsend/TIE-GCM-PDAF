@@ -1,6 +1,6 @@
 # TIE-GCM PDAF
 
-[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.23102802.svg)](https://doi.org/10.5281/zenodo.23102802)
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.23102802.svg)](https://doi.org/10.5281/zenodo.23102802) [![Docs](https://img.shields.io/badge/docs-GitHub%20Pages-blue)](https://rainbowsend.github.io/TIE-GCM-PDAF/)
 
 **An ensemble data assimilation system for the upper atmosphere (thermosphere and ionosphere).**
 TIE-GCM PDAF combines the Thermosphere-Ionosphere-Electrodynamics General Circulation Model (TIE-GCM) with ensemble-based Kalman filters from the [Parallel Data Assimilation Framework (PDAF)](https://pdaf.awi.de/trac/wiki). It supports assimilation of satellite observations, such as accelerometer-derived mass densities; gridded observations (for example, from empirical models); and integrated observations such as VTEC. Adding new observation types to the existing code is straightforward.
