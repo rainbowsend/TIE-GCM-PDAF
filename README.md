@@ -5,7 +5,8 @@
 **An ensemble data assimilation system for the upper atmosphere (thermosphere and ionosphere).**
 TIE-GCM PDAF combines the Thermosphere-Ionosphere-Electrodynamics General Circulation Model (TIE-GCM) with ensemble-based Kalman filters from the [Parallel Data Assimilation Framework (PDAF)](https://pdaf.awi.de/trac/wiki). It supports assimilation of satellite observations, such as accelerometer-derived mass densities; gridded observations (for example, from empirical models); and integrated observations such as VTEC. Adding new observation types to the existing code is straightforward.
 
-This fork of NCAR HAO's TIE-GCM 3.0 was developed at the Institute for Geodesy and Geoinformation (University of Bonn) by the [Group of Astronomical, Physical, and Mathematical Geodesy (APMG)](https://www.igg.uni-bonn.de/apmg/de). Use is governed by the [NCAR TIE-GCM open source academic research license agreement](./LICENSE).
+This fork of NCAR HAO's TIE-GCM 3.0 was developed at the Institute for Geodesy and Geoinformation (University of Bonn) by the [Group of Astronomical, Physical, and Mathematical Geodesy (APMG)](https://www.igg.uni-bonn.de/apmg/de). This software is part of the NCAR TIE-GCM. Use is governed by the [Open Source Academic Research License
+Agreement contained in the file tiegcmlicense.txt.](./LICENSE).
 
 > [!Tip]
 > If you just want to try TIE-GCM PDAF hands-on, see the [minimal working example](mwe/README.md) in `mwe/`.
@@ -17,6 +18,7 @@ This fork of NCAR HAO's TIE-GCM 3.0 was developed at the Institute for Geodesy a
 When using this software, please cite
 * this [fork](https://doi.org/10.5281/zenodo.23102802),
 * the [PDAF Binding for TIE-GCM](https://doi.org/10.5281/zenodo.23103186),
+* the [thesis describing the assimilation system](https://doi.org/10.48565/bonndoc-596),
 * the [original TIE-GCM](https://doi.org/10.5281/zenodo.20076374),
 * its [associated paper](https://doi.org/10.1029/2025JA034219),
 * and [PDAF](https://doi.org/10.5281/zenodo.7861812).
