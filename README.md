@@ -1,5 +1,12 @@
 # TIE-GCM PDAF
 
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="logo/logo-dark-mode.svg">
+    <img src="logo/logo.svg" alt="TIE-GCM PDAF logo" width="350">
+  </picture>
+</p>
+
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.23102802.svg)](https://doi.org/10.5281/zenodo.23102802) [![Docs](https://img.shields.io/badge/docs-GitHub%20Pages-blue)](https://rainbowsend.github.io/TIE-GCM-PDAF/)
 
 **An ensemble data assimilation system for the upper atmosphere (thermosphere and ionosphere).**

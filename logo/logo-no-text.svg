@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!-- Created with Inkscape (http://www.inkscape.org/) -->
+
+<svg
+   width="71.08812mm"
+   height="60.258373mm"
+   viewBox="0 0 71.088121 60.258373"
+   version="1.1"
+   id="svg1"
+   xmlns="http://www.w3.org/2000/svg"
+   xmlns:svg="http://www.w3.org/2000/svg">
+  <defs
+     id="defs1" />
+  <g
+     id="layer1"
+     transform="translate(-71.535681,-75.495618)">
+    <path
+       d="m 112.49489,75.495618 c -2.63512,0 -5.19075,0.337457 -7.62589,0.971517 -12.458805,3.836622 -21.541762,15.458188 -21.541762,29.157405 0,13.6992 9.082957,25.32076 21.541762,29.15738 2.43514,0.63406 4.99077,0.97152 7.62589,0.97152 16.65283,0 30.12891,-13.47607 30.12891,-30.1289 0,-16.652842 -13.47608,-30.128922 -30.12891,-30.128922 z m 1.33222,4.628658 c 14.11288,0 25.50025,11.387379 25.50025,25.500264 0,14.11287 -11.38737,25.49972 -25.50025,25.49972 -14.112867,0 -25.499671,-11.38685 -25.499671,-25.49972 0,-14.112885 11.386804,-25.500264 25.499671,-25.500264 z"
+       style="baseline-shift:baseline;display:inline;overflow:visible;vector-effect:none;fill:#9380e7;fill-opacity:0.226793;stroke-linecap:round;paint-order:fill markers stroke;enable-background:accumulate;stop-color:#000000"
+       id="path5-4-8" />
+    <path
+       d="m 107.83336,75.495621 c -2.63512,0 -5.19075,0.337457 -7.62589,0.971517 -12.458807,3.836622 -21.541801,15.458188 -21.541801,29.157402 0,13.6992 9.082991,25.32076 21.541801,29.15738 2.43514,0.63406 4.99077,0.97152 7.62589,0.97152 16.65283,0 30.12891,-13.47607 30.12891,-30.1289 0,-16.652839 -13.47608,-30.128919 -30.12891,-30.128919 z m 1.33222,4.628658 c 14.11288,0 25.50025,11.387379 25.50025,25.500261 0,14.11287 -11.38737,25.49972 -25.50025,25.49972 -14.11284,0 -25.4997,-11.38685 -25.4997,-25.49972 0,-14.112882 11.38686,-25.500261 25.4997,-25.500261 z"
+       style="baseline-shift:baseline;display:inline;overflow:visible;vector-effect:none;fill:#9380e7;fill-opacity:0.516104;stroke:none;stroke-linecap:round;stroke-opacity:1;paint-order:fill markers stroke;enable-background:accumulate;stop-color:#000000"
+       id="path5-4" />
+    <path
+       d="m 102.82008,75.496167 c -2.63512,0 -5.190753,0.337457 -7.625891,0.971517 -12.458843,3.836622 -21.541837,15.458188 -21.541837,29.157396 0,13.6992 9.082991,25.32077 21.541837,29.15739 2.435137,0.63406 4.990771,0.97152 7.625891,0.97152 16.65283,0 30.12891,-13.47608 30.12891,-30.12891 0,-16.652833 -13.47608,-30.128913 -30.12891,-30.128913 z m 1.33222,4.628658 c 14.11288,0 25.50025,11.387379 25.50025,25.500255 0,14.11287 -11.38737,25.49973 -25.50025,25.49973 -14.11287,0 -25.499737,-11.38686 -25.499737,-25.49973 0,-14.112876 11.386867,-25.500255 25.499737,-25.500255 z"
+       style="baseline-shift:baseline;display:inline;overflow:visible;opacity:1;vector-effect:none;fill:#9380e7;stroke-linecap:round;paint-order:fill markers stroke;enable-background:accumulate;stop-color:#000000;stop-opacity:1"
+       id="path5" />
+    <g
+       id="g3"
+       transform="translate(-24.215099,64.325887)" />
+    <circle
+       style="fill:none;fill-opacity:1;stroke:#cde87f;stroke-width:2.30562;stroke-linecap:butt;stroke-dasharray:none;stroke-opacity:1;paint-order:fill markers stroke"
+       id="path8"
+       cx="75.980957"
+       cy="106.68341"
+       r="3.2924662" />
+  </g>
+  <g
+     id="g1"
+     transform="rotate(-90,30.636771,103.64456)">
+    <path
+       style="fill:#000000;fill-opacity:1;stroke:#000000;stroke-width:1;stroke-linecap:round;stroke-dasharray:none;stroke-opacity:1;paint-order:fill markers stroke"
+       id="path1"
+       d="m 126.2342,105.62453 a 22.081783,22.081783 0 0 1 -11.04089,19.12338 22.081783,22.081783 0 0 1 -22.081782,0 22.081783,22.081783 0 0 1 -11.040891,-19.12338 z" />
+    <path
+       style="fill:#ffffff;fill-opacity:1;stroke:#000000;stroke-width:1;stroke-linecap:round;stroke-dasharray:none;stroke-opacity:1;paint-order:fill markers stroke"
+       id="path1-3"
+       d="m 126.2342,-105.62453 a 22.081783,22.081783 0 0 1 -11.04089,19.123388 22.081783,22.081783 0 0 1 -22.081782,0 22.081783,22.081783 0 0 1 -11.040891,-19.123388"
+       transform="scale(1,-1)" />
+  </g>
+</svg>

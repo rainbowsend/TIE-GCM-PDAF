@@ -1,0 +1,6 @@
+{%- comment -%}
+  Overrides the theme's title.html: show the symbol logo next to the site title
+  (the theme's own `logo` option would replace the title with the image).
+{%- endcomment -%}
+<img src="{{ '/assets/logo-no-text.svg' | relative_url }}" alt="" style="height: 2rem; width: auto; margin-right: 0.5rem;">
+{{ site.title }}
