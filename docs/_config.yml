@@ -1,5 +1,24 @@
 title: TIE-GCM PDAF
 description: Ensemble data assimilation system for Earth's upper atmosphere (thermosphere and ionosphere)
-theme: jekyll-theme-cayman
+remote_theme: just-the-docs/just-the-docs@v0.12.0
+plugins:
+  - jekyll-remote-theme
+
 kramdown:
   input: GFM
+  toc_levels: 2..3
+
+search_enabled: true
+heading_anchors: true
+
+aux_links:
+  "TIE-GCM PDAF on GitHub":
+    - "https://github.com/rainbowsend/TIE-GCM-PDAF"
+
+callouts:
+  note:
+    title: Note
+    color: purple
+  warning:
+    title: Warning
+    color: red

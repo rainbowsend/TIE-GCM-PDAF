@@ -1,10 +1,20 @@
 ---
 title: Configuration
+nav_order: 2
 ---
 
 # Configuration
+{: .no_toc }
 
 TIE-GCM settings are controlled by a [namelist file](https://www.hao.ucar.edu/modeling/tgcm/tiegcm2.0/userguide/html/namelist.html#example-namelist-input-files). The path to this file is the first argument to the executable. When using TIE-GCM PDAF, the executable takes a second argument: the path to another namelist file that controls the assimilation setup. The namelist parameters are explained in the following:
+
+
+<details markdown="block">
+  <summary>Table of contents</summary>
+  {: .text-delta }
+1. TOC
+{:toc}
+</details>
 
 ## Output
 
@@ -169,7 +179,8 @@ List of state variables that are included in the result file. The state variable
 
   **Example**: `OUTPUT%SUPRESS_TIEGCM_OUTPUT=.true.`
 
-> **Warning:** You cannot restart the model without the TIE-GCM internal files
+{: .warning }
+> You cannot restart the model without the TIE-GCM internal files
 
 ### OUTPUT%USE_DOUBLE_PRECISION
   If true, use 8-byte floating-point numbers; else, use 4-byte floating-point numbers.
@@ -259,7 +270,8 @@ List of state variables that are included in the result file. The state variable
 
   [`OUTPUT%SAVE_N_STEPS_AFTER_UPDATE`](#outputsave_n_steps_after_update-expert) and [`LOGGER%VERBOSE_LEVEL`](#loggerverbose_level) are only raised if they are currently smaller, so a larger explicit value is preserved. [`OUTPUT%SYNC_EVERY`](#outputsync_every) is the exception: it is always set to `1`, since for this option a smaller value means more diagnostic safety, not less.
 
-> **Warning:** Intended for debugging only, never for production runs. The impact on runtime and disk usage is severe: every ensemble member is written, the state vector is written for the current and previous time step, and five additional model steps are written after every analysis step. This option removes the throttling of file syncronization entirely.
+{: .warning }
+> Intended for debugging only, never for production runs. The impact on runtime and disk usage is severe: every ensemble member is written, the state vector is written for the current and previous time step, and five additional model steps are written after every analysis step. This option removes the throttling of file syncronization entirely.
 
   **Type**: logical
 
@@ -310,7 +322,8 @@ After each analysis step, constraints are applied to ensure the state is physica
 
 ## parameters
 
-> **Note:** This section controls various model inputs, not only model parameters. The name `PARAMETERS` is therefore somewhat misleading, but it is not changed to keep the configuration file compatible.
+{: .note }
+> This section controls various model inputs, not only model parameters. The name `PARAMETERS` is therefore somewhat misleading, but it is not changed to keep the configuration file compatible.
 
 ### PARAMETERS%ENSEMBLE_FILE
   Default path to NetCDF file containing the model input perturbations for all ensemble members.
@@ -750,8 +763,10 @@ Controls the composition of the state vector
 
 ### OBSERVATION%SATELLITE()
 
-Section to assimilate data along a satellite's orbit. 
-> **Note:** Data from multiple satellites can be assimilated simultaneously. Currently, only total mass densities can be assimilated.
+Section to assimilate data along a satellite's orbit.
+
+{: .note }
+> Data from multiple satellites can be assimilated simultaneously. Currently, only total mass densities can be assimilated.
 
 #### OBSERVATION%SATELLITE()%APPLY
   assimilate this observation
