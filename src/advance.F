@@ -72,7 +72,7 @@
 #ifdef USE_PDAF
       use array_print_module, only: printMat
       use configuration, only: cfg_output
-      use nc_debug, only: instant_write, advance_nc_debug,
+      use nc_debug, only: advance_nc_debug,
      | panic_is_enabled
       use result_writer_frontend, only: compute_and_write_results
       use model_parameter_handling_module, only:

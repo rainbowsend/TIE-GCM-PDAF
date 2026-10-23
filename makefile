@@ -151,7 +151,7 @@ BIND_SRC := 	trajectory_data.F90            model_parameters.F90 \
 		task_distribution.F90 \
 		mapping.F90                    time.F90 \
 		mod_assimilation.F90           uset.F90 \
-		model_parameter_IO.F90
+		model_parameter_IO.F90         vtec.F90
 
 BIND_OBJS := $(BIND_SRC:%.F90=$(OBJDIR)/%.o)
 
