@@ -65,6 +65,9 @@ ifeq ($(ALT_EXT),TRUE)
 	FFLAGS+=-DALT_EXT
 endif
 
+# enable this flag if you want to compile with CDF support
+FFLAGS+=-DUSE_CDF
+
 FFLAGS+= -ffixed-line-length-80 -DMPI
 FFLAGS += $(OPTIM)
 
@@ -85,8 +88,10 @@ LIB= $(LIB_NETCDF) \
 
 ifeq ($(WITH_PDAF),TRUE)
        LIB += $(LIB_PDAF)
+       LIB += $(LIB_CDF)
        LIB += -L deps/geodetic-fortran-utilities/lib -lgfu
        INCLUDE += $(INC_PDAF)
+       INCLUDE += $(INC_CDF)
        INCLUDE += -I$(BIND_SRC_DIR)
        INCLUDE += -I deps/geodetic-fortran-utilities/include
        FFLAGS += -DUSE_PDAF
@@ -124,7 +129,7 @@ TGCM_SRCS_90 := aerostatic_diag.F90 apex.F90 char.F90 current.F90 eclipse.F90  h
 TGCM_OBJS := $(TGCM_SRCS:%.F=$(OBJDIR)/%.o)
 TGCM_OBJS_90 := $(TGCM_SRCS_90:%.F90=$(OBJDIR)/%.o)
 
-BIND_SRC := 	trajectory_data.F90            model_parameters.F90 \
+BIND_SRC_90 := 	trajectory_data.F90            model_parameters.F90 \
 		assimilate_pdaf.F90            model_parameters_handling.F90 \
 		mod_parallel_pdaf.F90 \
 		callback_obs_pdafomi.F90       mpi_moments.F90 \
@@ -153,7 +158,7 @@ BIND_SRC := 	trajectory_data.F90            model_parameters.F90 \
 		mod_assimilation.F90           uset.F90 \
 		model_parameter_IO.F90         vtec.F90
 
-BIND_OBJS := $(BIND_SRC:%.F90=$(OBJDIR)/%.o)
+BIND_OBJS_90 := $(BIND_SRC_90:%.F90=$(OBJDIR)/%.o)
 
 .Phony: all
 all: Depends exe
@@ -175,9 +180,14 @@ endif
 	@mv Srcfiles $(BUILD_DIR)
 	
 ifeq ($(WITH_PDAF),TRUE)
-$(BIND_OBJS) : $(OBJDIR)/%.o: $(BIND_SRC_DIR)/%.F90 | gitversion objdir moddir
+$(BIND_OBJS_90) : $(OBJDIR)/%.o: $(BIND_SRC_DIR)/%.F90 | gitversion objdir moddir
 	$(info $(bold)compile $<$(sgr0)  target: $@ )
 	$(COMPILE.f18) $<
+
+# dedicated target for cdf_wrapper.o which requires fixed format and `-fsecond-underscore` option
+$(OBJDIR)/cdf_wrapper.o : $(BIND_SRC_DIR)/cdf_wrapper.F
+	$(info $(bold)compile $<$(sgr0)  target: $@ )
+	$(COMPILE.f77) -fsecond-underscore $<
 
 # required to avoid recompile of the whole PDAF binding when gitversion.inc changes
 $(OBJDIR)/nc_functionality.o: $(BIND_SRC_DIR)/gitversion.inc
@@ -198,7 +208,8 @@ $(OBJDIR)/util.o: $(TGCM_SRC_DIR)/util.F
 
 PROG_DEPS = $(TGCM_OBJS) $(TGCM_OBJS_90)
 ifeq ($(WITH_PDAF),TRUE)
-	PROG_DEPS += $(BIND_OBJS)
+	PROG_DEPS += $(BIND_OBJS_90)
+	PROG_DEPS += $(OBJDIR)/cdf_wrapper.o
 endif
 
 $(BINDIR)/$(EXE_NAME): $(PROG_DEPS) | bindir
